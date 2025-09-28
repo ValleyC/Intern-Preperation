@@ -1,19 +1,31 @@
-## Assign VS <=
-Why assign out = in; works:
+```markdown
+# Verilog: Why `assign` works but `<=` doesn't for wire implementation
 
-Continuous Assignment: assign creates a continuous assignment that works outside of always blocks
-Wire Type: Your output out is implicitly declared as a wire type
-Always Active: The assignment is always "listening" - whenever in changes, out immediately follows
+## Question
+```verilog
+module top_module( input in, output out );
+    assign out = in;  // ✅ This works
+    // out <= in;     // ❌ This doesn't work
+endmodule
+```
 
-Why out <= in; doesn't work:
+## Why `assign out = in;` works:
 
-Procedural Assignment: <= is a non-blocking procedural assignment
-Requires Always Block: Procedural assignments must be inside always blocks
-Wrong Data Type: Procedural assignments typically drive reg types, not wire types
-Missing Context: The synthesizer doesn't know when to execute this assignment
+1. **Continuous Assignment**: `assign` creates a continuous assignment that works outside of always blocks
+2. **Wire Type**: Your output `out` is implicitly declared as a `wire` type
+3. **Always Active**: The assignment is always "listening" - whenever `in` changes, `out` immediately follows
 
-To make <= work, you'd need:
-verilogmodule top_module( 
+## Why `out <= in;` doesn't work:
+
+1. **Procedural Assignment**: `<=` is a non-blocking procedural assignment
+2. **Requires Always Block**: Procedural assignments must be inside `always` blocks
+3. **Wrong Data Type**: Procedural assignments typically drive `reg` types, not `wire` types
+4. **Missing Context**: The synthesizer doesn't know when to execute this assignment
+
+## To make `<=` work, you'd need:
+
+```verilog
+module top_module( 
     input in, 
     output reg out  // Note: changed to 'reg'
 );
@@ -21,8 +33,11 @@ verilogmodule top_module(
         out <= in;       // Now this works
     end
 endmodule
+```
+
 Or with blocking assignment:
-verilogmodule top_module( 
+```verilog
+module top_module( 
     input in, 
     output reg out 
 );
@@ -30,8 +45,13 @@ verilogmodule top_module(
         out = in;        // Blocking assignment
     end
 endmodule
-Key Rules:
+```
 
-Wires: Can only be driven by assign statements or module outputs
-Regs: Can only be driven by procedural assignments inside always blocks
-Continuous vs Procedural: Different assignment mechanisms for different modeling styles
+## Key Rules:
+- **Wires**: Can only be driven by `assign` statements or module outputs
+- **Regs**: Can only be driven by procedural assignments inside `always` blocks
+- **Continuous vs Procedural**: Different assignment mechanisms for different modeling styles
+
+## Best Practice:
+For simple wire connections like yours, `assign` is the preferred and most efficient approach.
+```
