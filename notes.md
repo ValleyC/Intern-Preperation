@@ -219,4 +219,3 @@ reg [31:0] registers [15:0];   // 16 registers
 - **Both together `[7:0] mem [255:0]`** = Array of multi-bit values
 
 
-
