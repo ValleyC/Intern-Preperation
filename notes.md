@@ -54,7 +54,6 @@ endmodule
 For simple wire connections like yours, `assign` is the preferred and most efficient approach.
 ```
 
-```markdown
 # Verilog: Packed vs. Unpacked Arrays
 
 ## Quick Summary
