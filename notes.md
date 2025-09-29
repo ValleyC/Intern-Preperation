@@ -6,7 +6,7 @@ module top_module( input in, output out );
     assign out = in;  // ✅ This works
     // out <= in;     // ❌ This doesn't work
 endmodule
-
+```
 ## Why `assign out = in;` works:
 
 1. **Continuous Assignment**: `assign` creates a continuous assignment that works outside of always blocks
@@ -52,7 +52,7 @@ endmodule
 
 ## Best Practice:
 For simple wire connections like yours, `assign` is the preferred and most efficient approach.
-```
+
 
 
 
