@@ -1,4 +1,3 @@
-```markdown
 # Verilog: Why `assign` works but `<=` doesn't for wire implementation
 
 ## Question
@@ -7,7 +6,6 @@ module top_module( input in, output out );
     assign out = in;  // ✅ This works
     // out <= in;     // ❌ This doesn't work
 endmodule
-```
 
 ## Why `assign out = in;` works:
 
