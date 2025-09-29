@@ -54,6 +54,11 @@ endmodule
 For simple wire connections like yours, `assign` is the preferred and most efficient approach.
 ```
 
+
+
+
+
+
 # Verilog: Packed vs. Unpacked Arrays
 
 ## Quick Summary
@@ -64,7 +69,6 @@ For simple wire connections like yours, `assign` is the preferred and most effic
 ```verilog
 reg [7:0] data;        // 8-bit vector (bits packed together)
 wire [15:0] address;   // 16-bit vector
-
 
 **Think of it as**: A single multi-bit value
 - Can access individual bits: `data[3]`, `data[7:4]`
