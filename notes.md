@@ -219,3 +219,64 @@ reg [31:0] registers [15:0];   // 16 registers
 - **Both together `[7:0] mem [255:0]`** = Array of multi-bit values
 
 
+# Verilog Indexed Part-Select Operators
+
+## The `+:` Operator (Ascending Part-Select)
+
+The `+:` operator allows you to select a range of bits starting from a base index and extending upward.
+
+### Syntax
+```verilog
+signal[base_index +: width]
+Meaning
+Select width bits starting at base_index and going upward (incrementing bit positions).
+Example
+veriloginput [15:0] data;
+input [3:0] offset;
+output [3:0] out;
+
+assign out = data[offset*4 +: 4];
+When offset = 0: data[0 +: 4] → data[3:0]
+When offset = 1: data[4 +: 4] → data[7:4]
+When offset = 2: data[8 +: 4] → data[11:8]
+When offset = 3: data[12 +: 4] → data[15:12]
+
+The -: Operator (Descending Part-Select)
+The -: operator selects bits starting from a base index and extending downward.
+Syntax
+verilogsignal[base_index -: width]
+Meaning
+Select width bits starting at base_index and going downward (decrementing bit positions).
+Example
+veriloginput [15:0] data;
+input [3:0] offset;
+output [3:0] out;
+
+assign out = data[offset*4+3 -: 4];
+When offset = 0: data[3 -: 4] → data[3:0]
+When offset = 1: data[7 -: 4] → data[7:4]
+When offset = 2: data[11 -: 4] → data[11:8]
+When offset = 3: data[15 -: 4] → data[15:12]
+
+Key Differences
+OperatorDirectionFormula+:Ascending (upward)[start +: width] = [start : start+width-1]-:Descending (downward)[start -: width] = [start : start-width+1]
+
+Why Use Indexed Part-Select?
+✅ Dynamic bit selection - The base index can be a variable or expression
+✅ Cleaner code - Avoids complex case statements or multiple if-else blocks
+✅ Perfect for multiplexers - Efficiently select slices from packed arrays
+Common Use Case: Wide Multiplexers
+verilog// 256-to-1 mux, selecting 4-bit chunks from 1024-bit input
+module top_module( 
+    input [1023:0] in,
+    input [7:0] sel,
+    output [3:0] out );
+    
+    assign out = in[sel*4 +: 4];  // Clean and elegant!
+endmodule
+
+Note
+⚠️ The width in +: and -: must be constant (not a variable). Only the base index can be dynamic.
+Valid:   data[offset +: 4] ✓
+Invalid: data[offset +: width] ✗ (if width is a variable)
+
