@@ -270,7 +270,7 @@ Your research has two complementary threads that perfectly match this role:
 
 #### "Tell me about yourself / Walk me through your background"
 
-> "I'm a fourth-year PhD candidate in Electrical and Computer Engineering at the University of Alberta, working with Professor Venkata Dinavahi. My research sits at the intersection of machine learning and hardware systems.
+> "I'm a fourth-year PhD candidate in Electrical and Computer Engineering at the University of Alberta, working with Professor Jie Han. My research sits at the intersection of machine learning and hardware systems.
 >
 > I have three main research projects. First, I published a paper in IEEE JESTIE on using neural networks for real-time electromagnetic transient simulation — I deployed hybrid MLP/GRU models on FPGAs to achieve faster-than-real-time emulation of renewable energy systems.
 >
