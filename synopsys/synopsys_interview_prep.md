@@ -74,8 +74,8 @@ Hybrid neural network approach:
 #### Key Technical Details
 | Component | Neural Network | Architecture | Input Features | Output |
 |-----------|---------------|--------------|----------------|--------|
-| DFIG Wind Turbine | GRU | 2 layers, hidden=128 | Wind speed, grid voltage, rotor speed | Stator/rotor currents, torque |
-| Li-ion Battery | GRU | 2 layers, hidden=64 | SOC, load current, temperature | Terminal voltage, internal states |
+| DFIG Wind Turbine | GRU | 1 layer, hidden=30, seq=5 | Wind speed, grid voltage + recursive (Tm, ωr) | Stator/rotor currents, torque |
+| Li-ion Battery | GRU | 1 layer, hidden=20, seq=3 | Load current, temperature + recursive (SOC, Ii) | Terminal voltage, internal states |
 | PV Array (4×4) | MLP | 4 layers, hidden=64 | Irradiance, terminal voltage | Output current |
 
 #### FPGA Implementation
@@ -89,7 +89,10 @@ Hybrid neural network approach:
 | Wind Farm (180 turbines) | 462.5 µs | 15 µs | 3.33× |
 | Battery (50 MW) | — | 10 µs | 5× |
 | PV Array (320 panels) | — | 6 µs | 8.33× |
-| Accuracy | — | <0.01% relative error | — |
+| DFIG accuracy | — | 0.02% NRMSE | — |
+| Battery accuracy | — | 0.00078% NRMSE | — |
+| PV accuracy | — | 0.2% (normal) / 4% (partial shading) | — |
+| Quantization error | — | <0.01% (float vs FPGA) | — |
 
 #### Why This Matters for Synopsys
 This paper demonstrates exactly what the job asks for:
@@ -256,7 +259,7 @@ Your research has two complementary threads that perfectly match this role:
 ### 60-Second Version
 > "I'm a PhD candidate in ECE at the University of Alberta. My research focuses on using machine learning to accelerate complex simulations and optimization.
 >
-> Most relevant to this role, I published a paper in IEEE JESTIE where I developed hybrid neural networks — GRUs and MLPs — to replace expensive electromagnetic transient simulations for power systems. I trained these models on validated EMT data, then deployed them on Xilinx FPGAs. The wind farm model went from 462 microseconds per step to 15 microseconds — a 30x speedup with less than 0.01% error.
+> Most relevant to this role, I published a paper in IEEE JESTIE where I developed hybrid neural networks — GRUs and MLPs — to replace expensive electromagnetic transient simulations for power systems. I trained these models on validated EMT data, then deployed them on Xilinx FPGAs. The wind farm model went from 462 microseconds per step to 15 microseconds — a 30x speedup — with DFIG models at 0.02% NRMSE and quantization loss below 0.01%.
 >
 > I also have two papers under review on diffusion models. My DAC submission uses policy-gradient-trained diffusion for chip placement, where I compute energy at every diffusion step — not just at the end — to provide dense feedback during generation. My ICML submission introduces E(2)-equivariant diffusion for TSP, achieving state-of-the-art results.
 >
@@ -270,7 +273,7 @@ Your research has two complementary threads that perfectly match this role:
 
 #### "Tell me about yourself / Walk me through your background"
 
-> "I'm a fourth-year PhD candidate in Electrical and Computer Engineering at the University of Alberta, working with Professor Jie Han. My research sits at the intersection of machine learning and hardware systems.
+> "I'm a fourth-year PhD candidate in Electrical and Computer Engineering at the University of Alberta, working with Professor Venkata Dinavahi. My research sits at the intersection of machine learning and hardware systems.
 >
 > I have three main research projects. First, I published a paper in IEEE JESTIE on using neural networks for real-time electromagnetic transient simulation — I deployed hybrid MLP/GRU models on FPGAs to achieve faster-than-real-time emulation of renewable energy systems.
 >
@@ -294,7 +297,7 @@ Your research has two complementary threads that perfectly match this role:
 >
 > My solution was to train neural networks to learn the input-output mapping directly. I used GRUs for time-dependent components like wind turbines, because the current state depends on history. For stateless components like PV panels, I used simpler MLPs.
 >
-> I trained these on data from validated EMT simulations, then deployed on a Xilinx FPGA. The wind farm model achieved 15 microseconds latency compared to 462 microseconds for the traditional solver — a 30x speedup — while maintaining less than 0.01% relative error.
+> I trained these on data from validated EMT simulations, then deployed on a Xilinx FPGA. The wind farm model achieved 15 microseconds latency compared to 462 microseconds for the traditional solver — a 30x speedup — with DFIG accuracy at 0.02% NRMSE and quantization error below 0.01%. The system scales to 10,000 turbines at 8193x faster-than-real-time.
 >
 > This is directly applicable to EM simulation at Synopsys: using ML to predict simulation states rather than solving the full physics at each step."
 
@@ -431,7 +434,9 @@ Since the role involves physics simulation, brush up on:
 |--------|-------|-------|
 | Wind farm speedup | 30× (462 µs → 15 µs) | IEEE JESTIE |
 | FTRT ratio | 3.33× | IEEE JESTIE |
-| Model accuracy | <0.01% relative error | IEEE JESTIE |
+| DFIG model accuracy | 0.02% NRMSE | IEEE JESTIE |
+| Quantization error | <0.01% (float vs FPGA) | IEEE JESTIE |
+| Scalability | 8193x FTRT at 10,000 turbines | IEEE JESTIE |
 | HPWL improvement | 3.7–5.6% over supervised | DAC |
 | Gradient variance reduction | 3.2× | DAC |
 | TSP-500 gap | 0.08% (SOTA) | EDISCO |
