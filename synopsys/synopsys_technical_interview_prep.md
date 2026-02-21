@@ -158,7 +158,7 @@ Since the job description mentions "physics of electromagnetics," understand HFS
 
 > "I bring three complementary capabilities that align with Ansys's AI strategy:
 > 
-> 1. **Surrogate modeling with hardware deployment** — My IEEE JESTIE work demonstrates I can decompose a complex physics system into component-level ML surrogates (tiny GRUs with 30 hidden units), achieve 30× speedup, deploy on FPGA with <0.01% quantization loss, and scale to 10,000-turbine systems (8193× faster-than-real-time).
+> 1. **Surrogate modeling with hardware deployment** — My IEEE JESTIE work demonstrates I can decompose a complex physics system into component-level ML surrogates (tiny GRUs with 30 hidden units), achieve 3.33× faster-than-real-time on FPGA with <0.01% quantization loss, and scale to 10,000-turbine systems (8193× speedup over traditional).
 >
 > 2. **Iterative refinement methods** — My diffusion work (EDISCO, DAC) shows I understand how to design processes that progressively improve solutions, which maps to iterative simulation methods.
 >
@@ -172,7 +172,7 @@ Since the job description mentions "physics of electromagnetics," understand HFS
 
 > "I'm a PhD candidate in ECE at the University of Alberta. My research focuses on machine learning for simulation and optimization — which directly aligns with the AI-enhanced simulation direction Ansys has been pursuing.
 >
-> My most relevant work is my IEEE JESTIE paper on using neural networks to accelerate electromagnetic transient simulation. I developed hybrid GRU and MLP models that learned to predict power system dynamics from validated EMT simulation data. The key insight was treating simulation acceleration as a supervised learning problem — the physics solver generates training data, and the neural network learns the input-output mapping. I deployed these on FPGAs and achieved 3.3× faster-than-real-time, with DFIG model accuracy at 0.02% NRMSE and quantization error below 0.01%. The architecture is remarkably compact — single-layer GRUs with just 30 hidden units — which was key to meeting the 15µs FPGA latency target.
+> My most relevant work is my IEEE JESTIE paper on using neural networks to accelerate electromagnetic transient simulation. I developed hybrid GRU and MLP models that learned to predict power system dynamics from validated EMT simulation data. The key insight was treating simulation acceleration as a supervised learning problem — the physics solver generates training data, and the neural network learns the input-output mapping. I deployed these on FPGAs and achieved 3.3× faster-than-real-time, with DFIG model accuracy at 0.02% MSELoss and quantization error below 0.01%. The architecture is remarkably compact — single-layer GRUs with just 30 hidden units — which was key to meeting the 15µs FPGA latency target.
 >
 > I've also been exploring diffusion models for optimization. My ICML submission uses continuous-time diffusion with E(2)-equivariant architectures for TSP, achieving state-of-the-art results. My DAC submission applies policy-gradient-trained diffusion to chip placement, which is interesting because it learns without optimal placement examples — just an energy function measuring solution quality.
 >
@@ -183,7 +183,7 @@ Since the job description mentions "physics of electromagnetics," understand HFS
 > "Based on my experience and understanding of Ansys's approach, I'd consider several strategies:
 >
 > **1. Data-driven surrogate modeling (like SimAI):**
-> Train neural networks on existing HFSS simulation data to predict field distributions given geometry and boundary conditions. My IEEE JESTIE work showed this can achieve 30× speedup while maintaining accuracy. The key is choosing the right architecture — for EM fields, I'd explore implicit neural representations or neural operators like FNO that can handle continuous spatial fields.
+> Train neural networks on existing HFSS simulation data to predict field distributions given geometry and boundary conditions. My IEEE JESTIE work showed this can achieve 3.33× faster-than-real-time while maintaining accuracy. The key is choosing the right architecture — for EM fields, I'd explore implicit neural representations or neural operators like FNO that can handle continuous spatial fields.
 >
 > **2. Learning-augmented adaptive meshing:**
 > HFSS already uses adaptive mesh refinement. ML could help by predicting good initial meshes from geometry features, or learning which regions need finer resolution. This is similar to my diffusion work where we make decisions at each step based on current state.
@@ -243,7 +243,7 @@ Since the job description mentions "physics of electromagnetics," understand HFS
 
 > "This is central to my research. In my IEEE JESTIE work:
 >
-> - I achieved 30× speedup with DFIG accuracy at 0.02% NRMSE, battery at 0.00078%, and PV at 0.2% (normal) to 4% (partial shading — the hardest scenario)
+> - I achieved 3.33× faster-than-real-time with DFIG accuracy at 0.02% MSELoss, battery at 0.00078%, and PV at 0.2% (normal) to 4% (partial shading — the hardest scenario)
 > - The quantization error from float to FPGA fixed-point is separately below 0.01%, confirming deployment preserves accuracy
 > - The key was proper training data: Monte Carlo sampling from validated EMT simulations covering the operating range
 > - I validated on OOD scenarios including faults 20% shorter and 100% longer than training, and wind step changes
@@ -368,11 +368,10 @@ Since the job description mentions "physics of electromagnetics," understand HFS
 
 | Your Work | Metric |
 |-----------|--------|
-| IEEE JESTIE wind farm speedup | 30× (462 µs → 15 µs) |
-| IEEE JESTIE FTRT ratio | 3.33× |
-| IEEE JESTIE DFIG accuracy | 0.02% NRMSE |
+| IEEE JESTIE wind farm FTRT | 3.33× (50µs / 15µs) |
+| IEEE JESTIE DFIG accuracy | 0.02% MSELoss |
 | IEEE JESTIE quantization error | <0.01% (float vs FPGA) |
-| IEEE JESTIE scalability | 8193× FTRT at 10,000 turbines |
+| IEEE JESTIE scalability | 8193× speedup over traditional at 10,000 turbines |
 | DAC HPWL improvement | 3.7–5.6% vs supervised diffusion |
 | DAC gradient variance reduction | 3.2× |
 | EDISCO TSP-500 gap | 0.08% (SOTA) |

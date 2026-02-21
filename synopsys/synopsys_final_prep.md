@@ -244,15 +244,15 @@ Decomposition into ML surrogates:
 **Architecture — [WHITEBOARD: draw GRU with recursive feedback]**
 ```
 Timestep t:
-  Input: [wind_speed, grid_voltage, Tm(t-1), ωr(t-1)]
-                                     ↑ recursive feedback
+  Input: [Vw, Vabc, P, Q, Tm(t-1), ωr(t-1)]
+                          ↑ recursive feedback
          ┌─────────────────┐
          │  GRU Layer       │  hidden = 30
          │  (1 layer)       │  seq_len = 5
          └────────┬────────┘
                   ↓
-  Output: [stator_I, rotor_I, Tm(t), ωr(t)]
-                               ↓ fed back next step
+  Output: [Iabc, Tm(t), ωr(t), P, Q]
+                  ↓ fed back next step
 ```
 
 > "The DFIG GRU is remarkably compact — a single hidden layer with only 30 neurons, processing sequences of 5 timesteps. The autoregressive mechanism works through recursive features: the model predicts mechanical torque and rotor speed, which get fed back as inputs at the next timestep. Battery is similar but with SOC and internal current as the recursive features, hidden size 20."
@@ -276,7 +276,7 @@ Float32 model   ──→   Fixed-point quantization
 > "For FPGA deployment, I replaced all activation functions with lookup tables and quantized to fixed-point. The quantization error — float model versus FPGA model — is below 0.01%, confirming the deployment pipeline preserves accuracy."
 
 **Results (30 sec):**
-> "The wind farm model runs at 15 microseconds per timestep versus 462 for the traditional solver — a 30x speedup, achieving 3.33x faster-than-real-time. DFIG accuracy is 0.02% NRMSE. And the approach scales: at 10,000 turbines, we project 8,193x faster-than-real-time."
+> "The wind farm model runs at 15 microseconds per timestep on FPGA, achieving 3.33x faster-than-real-time (50µs timestep / 15µs latency). DFIG accuracy is 0.02% MSELoss. And the approach scales: at 10,000 turbines, we measured 8,193x speedup over the traditional solver."
 
 ---
 
@@ -342,7 +342,7 @@ Step 1000        Step 500         Step 1           Step 0
 
 **Q2: "How accurate are your models really? Walk me through the actual error numbers."**
 
-> "Let me be precise — there are two distinct error metrics in the paper. The **model accuracy** (ML vs. ground-truth simulation) varies by component: DFIG GRU training loss converges to 0.02% NRMSE, battery GRU to 0.00078%, PV MLP to 0.2% under normal irradiance, and up to 4% under partial shading (the hardest scenario). The second metric is **quantization error** (float model vs. fixed-point FPGA model), which is below 0.01% — this confirms the deployment pipeline preserves accuracy. For out-of-distribution validation, the paper tests 80ms faults (20% shorter than training data), 200ms faults (100% longer), and wind speed step changes (8→13, 10→5 m/s). The models handle these well, with errors staying below 1% near transitions. However, Section V of the paper honestly acknowledges that models are optimized for inputs within rated range, and outlier data may cause inaccuracy — I'd suggest a conventional model monitor as a safety fallback."
+> "Let me be precise — there are two distinct error metrics in the paper. The **model accuracy** (ML vs. ground-truth simulation) varies by component: DFIG GRU training loss converges to 0.02% MSELoss, battery GRU to 0.00078%, PV MLP to 0.2% under normal irradiance, and up to 4% under partial shading (the hardest scenario). The second metric is **quantization error** (float model vs. fixed-point FPGA model), which is below 0.01% — this confirms the deployment pipeline preserves accuracy. For out-of-distribution validation, the paper tests 80ms faults (20% shorter than training data), 200ms faults (100% longer), and wind speed step changes (8→13, 10→5 m/s). The models handle these well, with errors staying below 1% near transitions. However, Section V of the paper honestly acknowledges that models are optimized for inputs within rated range, and outlier data may cause inaccuracy — I'd suggest a conventional model monitor as a safety fallback."
 
 **Pivot:** "For HFSS surrogates, silent wrong answers on new geometries would be catastrophic. I'd architect any ML surrogate with mandatory uncertainty bounds and solver fallback — the same monitoring philosophy I advocated in the JESTIE paper."
 
@@ -440,7 +440,7 @@ Step 1000        Step 500         Step 1           Step 0
 
 > "I bring three complementary capabilities that align with the AI + simulation direction:
 >
-> 1. **Surrogate modeling with hardware deployment** — My IEEE JESTIE work demonstrates I can decompose a complex physics system into component-level ML surrogates (tiny GRUs with 30 hidden units), achieve 30x speedup, deploy on FPGA with <0.01% quantization loss, and scale to 10,000-turbine systems (8193x faster-than-real-time). I understand the full pipeline from training data generation to production hardware.
+> 1. **Surrogate modeling with hardware deployment** — My IEEE JESTIE work demonstrates I can decompose a complex physics system into component-level ML surrogates (tiny GRUs with 30 hidden units), achieve 3.33x faster-than-real-time on FPGA with <0.01% quantization loss, and scale to 10,000-turbine systems (8193x speedup over traditional). I understand the full pipeline from training data generation to production hardware.
 >
 > 2. **Iterative refinement methods** — My diffusion work shows I can design processes that progressively improve solutions, which maps directly to iterative simulation methods like adaptive meshing.
 >
@@ -471,13 +471,13 @@ Step 1000        Step 500         Step 1           Step 0
 ### Your Work
 | Metric | Value | Paper |
 |--------|-------|-------|
-| Wind farm speedup | **30x** (462µs → 15µs per timestep) | JESTIE |
-| FTRT ratio | **3.33x** (system equivalent timestep 1.5ms) | JESTIE |
-| DFIG model accuracy | **0.02% NRMSE** (training loss) | JESTIE |
-| Battery model accuracy | **0.00078% NRMSE** | JESTIE |
+| Wind farm FTRT | **3.33x** (50µs timestep / 15µs latency) | JESTIE |
+| System equivalent timestep | **1.5ms** (100 × 15µs wind farm latency) | JESTIE |
+| DFIG model accuracy | **0.02% MSELoss** (training loss) | JESTIE |
+| Battery model accuracy | **0.00078% MSELoss** | JESTIE |
 | PV model accuracy | **0.2%** normal, **4%** partial shading | JESTIE |
 | Quantization error | **<0.01%** (float vs FPGA fixed-point) | JESTIE |
-| Scalability | **8193x FTRT** at 10,000 turbines | JESTIE |
+| Scalability | **8193x speedup over traditional** at 10,000 turbines | JESTIE |
 | System scale | 180 turbines (270MW) + 320 PV + 50MW battery, IEEE 118-bus | JESTIE |
 | FPGA utilization | 93.3% DSP, 24.42% FF, 61.3% LUT (Xilinx VCU118) | JESTIE |
 | GRU architecture | hidden=30 (DFIG), hidden=20 (battery), single layer | JESTIE |

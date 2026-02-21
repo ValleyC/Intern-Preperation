@@ -84,13 +84,13 @@ Hybrid neural network approach:
 - **Optimizations:** LUT-based activation functions, pipelined loops
 
 #### Results
-| Model | Traditional Latency | ML Latency | Speedup (FTRT Ratio) |
+| Model | EMT Timestep | ML Latency | FTRT Ratio |
 |-------|--------------------:|------------|---------------------|
-| Wind Farm (180 turbines) | 462.5 µs | 15 µs | 3.33× |
-| Battery (50 MW) | — | 10 µs | 5× |
-| PV Array (320 panels) | — | 6 µs | 8.33× |
-| DFIG accuracy | — | 0.02% NRMSE | — |
-| Battery accuracy | — | 0.00078% NRMSE | — |
+| Wind Farm (180 turbines) | 50 µs | 15 µs | 3.33× |
+| Battery (50 MW) | 50 µs | 10 µs | 5× |
+| PV Array (320 panels) | 50 µs | 6 µs | 8.33× |
+| DFIG accuracy | — | 0.02% MSELoss | — |
+| Battery accuracy | — | 0.00078% MSELoss | — |
 | PV accuracy | — | 0.2% (normal) / 4% (partial shading) | — |
 | Quantization error | — | <0.01% (float vs FPGA) | — |
 
@@ -259,7 +259,7 @@ Your research has two complementary threads that perfectly match this role:
 ### 60-Second Version
 > "I'm a PhD candidate in ECE at the University of Alberta. My research focuses on using machine learning to accelerate complex simulations and optimization.
 >
-> Most relevant to this role, I published a paper in IEEE JESTIE where I developed hybrid neural networks — GRUs and MLPs — to replace expensive electromagnetic transient simulations for power systems. I trained these models on validated EMT data, then deployed them on Xilinx FPGAs. The wind farm model went from 462 microseconds per step to 15 microseconds — a 30x speedup — with DFIG models at 0.02% NRMSE and quantization loss below 0.01%.
+> Most relevant to this role, I published a paper in IEEE JESTIE where I developed hybrid neural networks — GRUs and MLPs — to replace expensive electromagnetic transient simulations for power systems. I trained these models on validated EMT data, then deployed them on Xilinx FPGAs. The wind farm model achieves 3.33x faster-than-real-time on FPGA (15µs latency for a 50µs timestep) — with DFIG models at 0.02% MSELoss and quantization loss below 0.01%.
 >
 > I also have two papers under review on diffusion models. My DAC submission uses policy-gradient-trained diffusion for chip placement, where I compute energy at every diffusion step — not just at the end — to provide dense feedback during generation. My ICML submission introduces E(2)-equivariant diffusion for TSP, achieving state-of-the-art results.
 >
@@ -297,7 +297,7 @@ Your research has two complementary threads that perfectly match this role:
 >
 > My solution was to train neural networks to learn the input-output mapping directly. I used GRUs for time-dependent components like wind turbines, because the current state depends on history. For stateless components like PV panels, I used simpler MLPs.
 >
-> I trained these on data from validated EMT simulations, then deployed on a Xilinx FPGA. The wind farm model achieved 15 microseconds latency compared to 462 microseconds for the traditional solver — a 30x speedup — with DFIG accuracy at 0.02% NRMSE and quantization error below 0.01%. The system scales to 10,000 turbines at 8193x faster-than-real-time.
+> I trained these on data from validated EMT simulations, then deployed on a Xilinx FPGA. The wind farm model achieves 3.33x faster-than-real-time (15µs latency for a 50µs EMT timestep), with DFIG accuracy at 0.02% MSELoss and quantization error below 0.01%. The system scales to 10,000 turbines at 8193x speedup over traditional solvers.
 >
 > This is directly applicable to EM simulation at Synopsys: using ML to predict simulation states rather than solving the full physics at each step."
 
@@ -432,11 +432,10 @@ Since the role involves physics simulation, brush up on:
 ### Key Numbers to Remember
 | Metric | Value | Paper |
 |--------|-------|-------|
-| Wind farm speedup | 30× (462 µs → 15 µs) | IEEE JESTIE |
-| FTRT ratio | 3.33× | IEEE JESTIE |
-| DFIG model accuracy | 0.02% NRMSE | IEEE JESTIE |
+| Wind farm FTRT | 3.33× (50µs / 15µs) | IEEE JESTIE |
+| DFIG model accuracy | 0.02% MSELoss | IEEE JESTIE |
 | Quantization error | <0.01% (float vs FPGA) | IEEE JESTIE |
-| Scalability | 8193x FTRT at 10,000 turbines | IEEE JESTIE |
+| Scalability | 8193x speedup over traditional at 10,000 turbines | IEEE JESTIE |
 | HPWL improvement | 3.7–5.6% over supervised | DAC |
 | Gradient variance reduction | 3.2× | DAC |
 | TSP-500 gap | 0.08% (SOTA) | EDISCO |

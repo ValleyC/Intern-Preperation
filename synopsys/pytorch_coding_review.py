@@ -31,7 +31,7 @@ from typing import Optional, Tuple
 # QUESTION 1: Implement a GRU Cell from Scratch
 # ==============================================================================
 # Context: Relevant to candidate's IEEE JESTIE paper, where GRU networks were
-# used for real-time electromagnetic transient simulation (30x speedup).
+# used for real-time electromagnetic transient simulation (3.33× FTRT on FPGA).
 #
 # INTERVIEWER PROMPT:
 #   "Implement a single GRU cell from scratch in PyTorch. Given input x_t and
@@ -1032,7 +1032,7 @@ DEPLOYMENT DECISION FRAMEWORK:
 
 MY EXPERIENCE:
   In my IEEE JESTIE paper, I validated on fault transients (worst-case scenarios)
-  separately from normal operation. DFIG model accuracy was 0.02% NRMSE, battery
+  separately from normal operation. DFIG model accuracy was 0.02% MSELoss, battery
   0.00078%, PV 0.2% (normal) to 4% (partial shading). The quantization error
   (float to FPGA fixed-point) was separately below 0.01%. The key was including
   diverse operating conditions (Monte Carlo sampling, 5% fault scenarios) in both

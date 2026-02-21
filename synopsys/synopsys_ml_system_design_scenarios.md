@@ -994,7 +994,7 @@ The pipeline I envision:
 | When They Ask About... | Connect To... |
 |------------------------|---------------|
 | Iterative refinement | DAC: dense per-step energy feedback in diffusion |
-| Surrogate modeling | JESTIE: GRU/MLP achieving 30x speedup, 0.02% NRMSE (DFIG), <0.01% quantization error |
+| Surrogate modeling | JESTIE: GRU/MLP achieving 3.33× FTRT, 0.02% MSELoss (DFIG), <0.01% quantization error |
 | Geometry-aware learning | EDISCO: E(2)-equivariant GNN |
 | Training without labels | DAC: unsupervised policy gradient on energy function |
 | Continuous-time processes | EDISCO: CTMC formulation, compatible with ODE solvers |

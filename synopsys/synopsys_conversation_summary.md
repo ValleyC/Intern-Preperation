@@ -118,15 +118,16 @@ Hybrid neural network approach:
 - Optimizations: LUT-based activation functions, pipelined loops
 
 #### Key Results
-| Model | Traditional Latency | ML Latency | Speedup |
-|-------|--------------------:|------------|---------|
-| Wind Farm (180 turbines) | 462.5 µs | 15 µs | **30×** |
-| FTRT Ratio | — | — | **3.33×** |
-| DFIG accuracy | — | — | **0.02% NRMSE** |
-| Battery accuracy | — | — | **0.00078% NRMSE** |
-| PV accuracy | — | — | **0.2%** (normal) / **4%** (partial shading) |
-| Quantization error | — | — | **<0.01%** (float vs FPGA) |
-| Scalability | — | — | **8193× FTRT** at 10,000 turbines |
+| Metric | Value |
+|--------|-------|
+| Wind Farm FTRT | **3.33×** (50µs / 15µs) |
+| Battery FTRT | **5×** (50µs / 10µs) |
+| PV FTRT | **8.33×** (50µs / 6µs) |
+| DFIG accuracy | **0.02% MSELoss** |
+| Battery accuracy | **0.00078% MSELoss** |
+| PV accuracy | **0.2%** (normal) / **4%** (partial shading) |
+| Quantization error | **<0.01%** (float vs FPGA) |
+| Scalability | **8193× speedup over traditional** at 10,000 turbines |
 
 #### Why Relevant to Synopsys
 - ML for physics simulation — exactly what the job asks
@@ -310,7 +311,7 @@ First diffusion model combining:
 
 > "I bring three complementary capabilities that align with Ansys's AI strategy:
 > 
-> 1. **Surrogate modeling with hardware deployment** — My IEEE JESTIE work demonstrates I can decompose a complex physics system into component-level ML surrogates (tiny GRUs with 30 hidden units), achieve 30× speedup, deploy on FPGA with <0.01% quantization loss, and scale to 10,000-turbine systems (8193× faster-than-real-time).
+> 1. **Surrogate modeling with hardware deployment** — My IEEE JESTIE work demonstrates I can decompose a complex physics system into component-level ML surrogates (tiny GRUs with 30 hidden units), achieve 3.33× faster-than-real-time on FPGA with <0.01% quantization loss, and scale to 10,000-turbine systems (8193× speedup over traditional).
 >
 > 2. **Iterative refinement methods** — My diffusion work (EDISCO, DAC) shows I understand how to design processes that progressively improve solutions, which maps to iterative simulation methods.
 >
@@ -331,11 +332,10 @@ First diffusion model combining:
 
 | Candidate's Work | Metric |
 |------------------|--------|
-| IEEE JESTIE wind farm speedup | 30× (462 µs → 15 µs) |
-| IEEE JESTIE FTRT ratio | 3.33× |
-| IEEE JESTIE DFIG accuracy | 0.02% NRMSE |
+| IEEE JESTIE wind farm FTRT | 3.33× (50µs / 15µs) |
+| IEEE JESTIE DFIG accuracy | 0.02% MSELoss |
 | IEEE JESTIE quantization error | <0.01% (float vs FPGA) |
-| IEEE JESTIE scalability | 8193× FTRT at 10,000 turbines |
+| IEEE JESTIE scalability | 8193× speedup over traditional at 10,000 turbines |
 | DAC HPWL improvement | 3.7–5.6% vs supervised diffusion |
 | DAC gradient variance reduction | 3.2× |
 | EDISCO TSP-500 gap | 0.08% (SOTA) |
@@ -413,7 +413,7 @@ First diffusion model combining:
 >
 > My solution was to train neural networks to learn the input-output mapping directly. I used GRUs for time-dependent components like wind turbines, because the current state depends on history. For stateless components like PV panels, I used simpler MLPs.
 >
-> I trained these on data from validated EMT simulations, then deployed on a Xilinx FPGA. The wind farm model achieved 15 microseconds latency compared to 462 microseconds for the traditional solver — a 30x speedup — with DFIG accuracy at 0.02% NRMSE and quantization error below 0.01%. The system scales to 10,000 turbines at 8193× faster-than-real-time.
+> I trained these on data from validated EMT simulations, then deployed on a Xilinx FPGA. The wind farm model achieves 3.33× faster-than-real-time (15µs latency for a 50µs EMT timestep), with DFIG accuracy at 0.02% MSELoss and quantization error below 0.01%. The system scales to 10,000 turbines at 8193× speedup over traditional solvers.
 >
 > This is directly applicable to EM simulation at Synopsys: using ML to predict simulation states rather than solving the full physics at each step."
 
@@ -484,14 +484,14 @@ Contents:
 
 3. **Interviewer:** Xin Xu, Principal R&D Engineer (senior technical, research-focused)
 
-4. **Most Relevant Paper:** IEEE JESTIE — demonstrates ML surrogates for EM simulation with 30× speedup
+4. **Most Relevant Paper:** IEEE JESTIE — demonstrates ML surrogates for EM simulation with 3.33× FTRT
 
 5. **Candidate's Fit:** Excellent — research directly aligns with Ansys SimAI approach (data-driven surrogate modeling)
 
 6. **Interview Format:** Likely research discussion + ML concepts, NOT LeetCode algorithms
 
 7. **Key Talking Points:**
-   - Surrogate modeling achieving 30× speedup with 0.02% NRMSE (DFIG), <0.01% quantization error
+   - Surrogate modeling achieving 3.33× FTRT with 0.02% MSELoss (DFIG), <0.01% quantization error
    - Iterative refinement via diffusion models
    - Unsupervised training from energy functions (no optimal labels needed)
    - Electromagnetics domain experience
