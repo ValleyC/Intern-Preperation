@@ -1,1361 +1,1048 @@
 """
 ================================================================================
-PYTORCH CODING REVIEW — Synopsys/Ansys ML Internship
+PYTHON & PYTORCH CODING REVIEW — Synopsys/Ansys ML Internship
 ================================================================================
 Interview Date: February 24, 2026
 Interviewer: Xin Xu (Principal R&D Engineer)
-Candidate Role: ML for Electromagnetic Simulation
 
-This file contains:
-  Part 1: "Implement X from scratch" questions (5 questions with solutions)
-  Part 2: "How would you implement X" verbal questions (5 questions, answers in docstrings)
-  Part 3: Common PyTorch gotchas (10 items)
+Redesigned for PRACTICAL assessment of Python + PyTorch fluency.
+A senior R&D engineer will likely test:
+  1. Can you write clean, correct Python? (data structures, OOP, generators)
+  2. Can you manipulate tensors and data? (NumPy/PyTorch operations)
+  3. Can you build a proper ML training pipeline? (Dataset, training loop, eval)
+  4. Can you debug common issues? (shapes, devices, gradients, memory)
 
-All code is self-contained, well-commented, and follows PyTorch best practices.
+NOT likely: "Implement a Fourier Neural Operator from scratch"
+
+This file is organized as:
+  Part 1: Python Fundamentals (5 exercises)
+  Part 2: NumPy / Tensor Operations (5 exercises)
+  Part 3: PyTorch Practical Patterns (5 exercises)
+  Part 4: Common Gotchas — Bug Spotting (10 items)
 ================================================================================
 """
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import math
-from typing import Optional, Tuple
+from torch.utils.data import Dataset, DataLoader
+import numpy as np
+from typing import List, Dict, Tuple, Optional
+from collections import defaultdict
+import os
 
 
 # ==============================================================================
-# PART 1: "IMPLEMENT X FROM SCRATCH" QUESTIONS
+# PART 1: PYTHON FUNDAMENTALS
+# ==============================================================================
+# These test clean Python — the kind of code you'd write daily at Synopsys.
 # ==============================================================================
 
 
-# ==============================================================================
-# QUESTION 1: Implement a GRU Cell from Scratch
-# ==============================================================================
-# Context: Relevant to candidate's IEEE JESTIE paper, where GRU networks were
-# used for real-time electromagnetic transient simulation (3.33× FTRT on FPGA).
-#
-# INTERVIEWER PROMPT:
-#   "Implement a single GRU cell from scratch in PyTorch. Given input x_t and
-#    previous hidden state h_{t-1}, compute the new hidden state h_t.
-#    Show the reset gate, update gate, and the candidate hidden state."
-#
-# GRU EQUATIONS:
-#   r_t = sigmoid(W_ir @ x_t + b_ir + W_hr @ h_{t-1} + b_hr)    (reset gate)
-#   z_t = sigmoid(W_iz @ x_t + b_iz + W_hz @ h_{t-1} + b_hz)    (update gate)
-#   n_t = tanh(W_in @ x_t + b_in + r_t * (W_hn @ h_{t-1} + b_hn))  (candidate)
-#   h_t = (1 - z_t) * n_t + z_t * h_{t-1}                        (output)
-# ==============================================================================
+# --- Exercise 1: Data Processing with Dictionaries & Comprehensions -----------
+# "We have simulation results stored as a list of dictionaries. Write a function
+#  to group them by geometry type and compute the average error per group."
 
-class GRUCell(nn.Module):
+def group_and_average(
+    results: List[Dict],
+    group_key: str = "geometry",
+    value_key: str = "error",
+) -> Dict[str, float]:
     """
-    A single GRU cell implemented from scratch.
+    Group simulation results by a key and compute the mean of a value field.
 
-    The GRU (Gated Recurrent Unit) uses two gates:
-    - Reset gate (r): controls how much of the previous state to forget
-    - Update gate (z): controls the blend between old state and candidate
-
-    This is simpler than LSTM (no separate cell state) while retaining the
-    ability to capture long-range dependencies.
+    >>> results = [
+    ...     {"geometry": "dipole", "error": 0.05, "freq": 2.4e9},
+    ...     {"geometry": "patch",  "error": 0.12, "freq": 5.0e9},
+    ...     {"geometry": "dipole", "error": 0.03, "freq": 2.4e9},
+    ...     {"geometry": "patch",  "error": 0.08, "freq": 5.0e9},
+    ...     {"geometry": "horn",   "error": 0.02, "freq": 10e9},
+    ... ]
+    >>> group_and_average(results)
+    {'dipole': 0.04, 'patch': 0.1, 'horn': 0.02}
     """
-
-    def __init__(self, input_size: int, hidden_size: int):
-        super().__init__()
-        self.input_size = input_size
-        self.hidden_size = hidden_size
-
-        # Combined weight matrices for efficiency: one matmul instead of three
-        # Input-to-hidden weights for all three gates: [reset, update, candidate]
-        self.W_ih = nn.Linear(input_size, 3 * hidden_size)
-
-        # Hidden-to-hidden weights for all three gates: [reset, update, candidate]
-        self.W_hh = nn.Linear(hidden_size, 3 * hidden_size)
-
-        self._init_weights()
-
-    def _init_weights(self):
-        """Initialize weights uniformly, matching PyTorch's default GRU init."""
-        stdv = 1.0 / math.sqrt(self.hidden_size)
-        for weight in self.parameters():
-            nn.init.uniform_(weight, -stdv, stdv)
-
-    def forward(self, x_t: torch.Tensor, h_prev: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass of a single GRU cell.
-
-        Args:
-            x_t:    Input at current timestep.    Shape: (batch_size, input_size)
-            h_prev: Hidden state from previous timestep. Shape: (batch_size, hidden_size)
-
-        Returns:
-            h_t: New hidden state.  Shape: (batch_size, hidden_size)
-        """
-        # Compute all input-to-hidden projections in one matmul
-        # Shape: (batch_size, 3 * hidden_size)
-        x_proj = self.W_ih(x_t)
-
-        # Compute all hidden-to-hidden projections in one matmul
-        # Shape: (batch_size, 3 * hidden_size)
-        h_proj = self.W_hh(h_prev)
-
-        # Split into the three gate projections
-        x_r, x_z, x_n = x_proj.chunk(3, dim=-1)  # each: (batch, hidden_size)
-        h_r, h_z, h_n = h_proj.chunk(3, dim=-1)  # each: (batch, hidden_size)
-
-        # ---- Reset Gate ----
-        # Decides how much of the previous hidden state to let through
-        # when computing the candidate. r=0 means "forget everything".
-        r_t = torch.sigmoid(x_r + h_r)  # Shape: (batch, hidden_size)
-
-        # ---- Update Gate ----
-        # Decides how much of the new candidate vs old state to use.
-        # z=1 means "keep old state entirely" (skip connection / carry).
-        z_t = torch.sigmoid(x_z + h_z)  # Shape: (batch, hidden_size)
-
-        # ---- Candidate Hidden State ----
-        # The reset gate modulates the previous hidden state BEFORE the
-        # linear projection — this is the key difference from LSTM.
-        n_t = torch.tanh(x_n + r_t * h_n)  # Shape: (batch, hidden_size)
-
-        # ---- New Hidden State ----
-        # Convex combination: when z_t is close to 1, we keep the old state
-        # (gradient highway); when z_t is close to 0, we adopt the candidate.
-        h_t = (1 - z_t) * n_t + z_t * h_prev  # Shape: (batch, hidden_size)
-
-        return h_t
+    groups = defaultdict(list)
+    for r in results:
+        groups[r[group_key]].append(r[value_key])
+    return {k: sum(v) / len(v) for k, v in groups.items()}
 
 
-def test_gru_cell():
-    """Verify our GRU cell produces correct output shapes and matches PyTorch."""
-    batch_size, input_size, hidden_size = 4, 10, 20
+# --- Exercise 2: Generator for Large File Processing -------------------------
+# "We have a huge CSV of simulation parameters. Write a generator that yields
+#  batches of N lines without loading the entire file into memory."
 
-    cell = GRUCell(input_size, hidden_size)
-    x = torch.randn(batch_size, input_size)
-    h = torch.randn(batch_size, hidden_size)
-
-    h_new = cell(x, h)
-    assert h_new.shape == (batch_size, hidden_size), f"Expected {(batch_size, hidden_size)}, got {h_new.shape}"
-
-    # Verify gradients flow
-    loss = h_new.sum()
-    loss.backward()
-    assert cell.W_ih.weight.grad is not None, "Gradients did not flow to W_ih"
-    print("[PASS] GRU Cell: shape, gradient checks passed")
-
-
-# ==============================================================================
-# QUESTION 2: Implement a Basic FNO (Fourier Neural Operator) Layer
-# ==============================================================================
-# Context: Neural operators are central to Ansys SimAI. FNO learns operators
-# between function spaces by parameterizing convolutions in Fourier space.
-#
-# INTERVIEWER PROMPT:
-#   "Implement a single Fourier Neural Operator layer. Show the spectral
-#    convolution: FFT of the input, multiply by learnable complex weights
-#    in Fourier space (keeping only the low-frequency modes), then IFFT back.
-#    Include the residual linear path."
-#
-# FNO LAYER:
-#   output = sigma( W_fourier(x) + W_local(x) + b )
-#   where W_fourier operates in spectral domain and W_local is pointwise.
-# ==============================================================================
-
-class SpectralConv2d(nn.Module):
+def batch_reader(filepath: str, batch_size: int = 32):
     """
-    Spectral convolution layer: the core of the Fourier Neural Operator.
+    Yield batches of lines from a file. Memory-efficient for large files.
 
-    Instead of convolving in physical space (O(N^2) or FFT-based O(N log N)),
-    we directly multiply by learnable weights in Fourier space. This is
-    equivalent to a global convolution with O(N log N + k) cost, where k
-    is the number of retained Fourier modes.
+    Why a generator?
+    - Simulation datasets can be GBs. Loading all into RAM is wasteful.
+    - Generators produce items lazily — only one batch in memory at a time.
+    - This is the same principle behind PyTorch's DataLoader with num_workers.
+    """
+    batch = []
+    with open(filepath, "r") as f:
+        for line in f:
+            batch.append(line.strip())
+            if len(batch) == batch_size:
+                yield batch
+                batch = []
+    if batch:  # Don't forget the last incomplete batch!
+        yield batch
+
+
+# --- Exercise 3: Class Design — Simulation Result Container -------------------
+# "Design a class to hold simulation results with proper validation."
+
+class SimulationResult:
+    """
+    Container for a single simulation result with validation.
+
+    Demonstrates:
+    - __init__ with validation
+    - __repr__ for debugging
+    - __eq__ for comparison
+    - Property for derived quantity
+    - Class method as alternative constructor
     """
 
-    def __init__(self, in_channels: int, out_channels: int, modes1: int, modes2: int):
+    def __init__(self, name: str, s_params: np.ndarray, freq_ghz: np.ndarray):
         """
         Args:
-            in_channels:  Number of input channels.
-            out_channels: Number of output channels.
-            modes1:       Number of Fourier modes to keep in the first dimension.
-            modes2:       Number of Fourier modes to keep in the second dimension.
+            name: Design identifier (e.g., "antenna_v3")
+            s_params: S-parameter matrix, shape (n_freq, n_ports, n_ports), complex
+            freq_ghz: Frequency points in GHz, shape (n_freq,)
         """
-        super().__init__()
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.modes1 = modes1  # Number of low-frequency modes to retain
-        self.modes2 = modes2
+        if s_params.shape[0] != freq_ghz.shape[0]:
+            raise ValueError(
+                f"Frequency dimension mismatch: s_params has {s_params.shape[0]} "
+                f"points but freq_ghz has {freq_ghz.shape[0]}"
+            )
+        self.name = name
+        self.s_params = s_params
+        self.freq_ghz = freq_ghz
 
-        # Scale factor for initialization (similar to Kaiming)
-        scale = 1.0 / (in_channels * out_channels)
+    @property
+    def n_ports(self) -> int:
+        return self.s_params.shape[1]
 
-        # Learnable complex-valued weights in Fourier space
-        # We need two sets because rfft2 produces both positive and negative
-        # frequency components along the first axis, but only non-negative
-        # along the second axis (Hermitian symmetry).
-        self.weights1 = nn.Parameter(
-            scale * torch.randn(in_channels, out_channels, modes1, modes2, dtype=torch.cfloat)
-        )
-        self.weights2 = nn.Parameter(
-            scale * torch.randn(in_channels, out_channels, modes1, modes2, dtype=torch.cfloat)
-        )
+    @property
+    def s11_db(self) -> np.ndarray:
+        """Return S11 in dB: 20 * log10(|S11|)"""
+        return 20.0 * np.log10(np.abs(self.s_params[:, 0, 0]) + 1e-12)
 
-    def compl_mul2d(self, input_ft: torch.Tensor, weights: torch.Tensor) -> torch.Tensor:
-        """
-        Complex multiplication and contraction over the channel dimension.
+    @property
+    def resonant_freq_ghz(self) -> float:
+        """Frequency where |S11| is minimized (resonance)."""
+        return float(self.freq_ghz[np.argmin(self.s11_db)])
 
-        This is the spectral equivalent of a 1x1 convolution: it mixes channels
-        independently at each Fourier mode.
+    @classmethod
+    def from_touchstone(cls, filepath: str) -> "SimulationResult":
+        """Alternative constructor: load from a .s2p touchstone file."""
+        # In practice, you'd parse the file format here
+        raise NotImplementedError("Touchstone parsing not implemented for demo")
 
-        Args:
-            input_ft: (batch, in_ch, modes1, modes2) complex tensor
-            weights:  (in_ch, out_ch, modes1, modes2) complex tensor
-
-        Returns:
-            (batch, out_ch, modes1, modes2) complex tensor
-        """
-        # Einstein summation: contract over input channels (i), keep batch (b),
-        # output channels (o), and spatial frequency indices (x, y)
-        return torch.einsum("bixy,ioxy->boxy", input_ft, weights)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass: FFT -> multiply by weights -> IFFT.
-
-        Args:
-            x: Input tensor. Shape: (batch, channels, height, width)
-
-        Returns:
-            Output tensor. Shape: (batch, out_channels, height, width)
-        """
-        batch_size = x.shape[0]
-        height, width = x.shape[-2], x.shape[-1]
-
-        # Step 1: Compute real FFT along the last two spatial dimensions.
-        # rfft2 exploits Hermitian symmetry: output has shape
-        # (batch, channels, height, width//2 + 1) — roughly half the modes.
-        x_ft = torch.fft.rfft2(x)  # Shape: (B, C_in, H, W//2+1), complex
-
-        # Step 2: Initialize output in Fourier space (zeros for modes we discard)
-        out_ft = torch.zeros(
-            batch_size, self.out_channels, height, width // 2 + 1,
-            dtype=torch.cfloat, device=x.device
+    def __repr__(self):
+        return (
+            f"SimulationResult(name='{self.name}', "
+            f"ports={self.n_ports}, "
+            f"freq=[{self.freq_ghz[0]:.1f}-{self.freq_ghz[-1]:.1f}] GHz, "
+            f"resonance={self.resonant_freq_ghz:.2f} GHz)"
         )
 
-        # Step 3: Multiply only the low-frequency modes by learnable weights.
-        # This acts as a low-pass filter with learnable coefficients.
-
-        # Positive frequencies (top-left corner of the frequency grid)
-        out_ft[:, :, :self.modes1, :self.modes2] = self.compl_mul2d(
-            x_ft[:, :, :self.modes1, :self.modes2], self.weights1
+    def __eq__(self, other):
+        if not isinstance(other, SimulationResult):
+            return NotImplemented
+        return (
+            self.name == other.name
+            and np.allclose(self.s_params, other.s_params)
+            and np.allclose(self.freq_ghz, other.freq_ghz)
         )
 
-        # Negative frequencies along dim1 (bottom-left corner, wraps around)
-        out_ft[:, :, -self.modes1:, :self.modes2] = self.compl_mul2d(
-            x_ft[:, :, -self.modes1:, :self.modes2], self.weights2
-        )
 
-        # Step 4: Inverse FFT back to physical space
-        x_out = torch.fft.irfft2(out_ft, s=(height, width))  # Shape: (B, C_out, H, W)
+# --- Exercise 4: Decorator for Timing Functions ------------------------------
+# "Write a decorator to time any function. We use this to profile simulation
+#  preprocessing, training, and inference."
 
-        return x_out
+import time
+from functools import wraps
 
-
-class FNOLayer(nn.Module):
+def timer(func):
     """
-    A complete FNO layer = Spectral convolution + pointwise linear + residual + activation.
+    Decorator that prints execution time of the wrapped function.
 
-    The spectral path captures global (low-frequency) interactions.
-    The linear path captures local (pointwise) interactions.
-    Together they approximate the full Green's function of the PDE.
+    Why @wraps(func)?
+    - Preserves the original function's __name__, __doc__, etc.
+    - Without it, debugging shows "wrapper" instead of the actual function name.
     """
-
-    def __init__(self, channels: int, modes1: int, modes2: int):
-        super().__init__()
-        self.spectral_conv = SpectralConv2d(channels, channels, modes1, modes2)
-        # Pointwise linear transform (1x1 conv) — captures local/high-frequency info
-        self.linear = nn.Conv2d(channels, channels, kernel_size=1)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass: parallel spectral + linear paths, then GELU activation.
-
-        Args:
-            x: Shape (batch, channels, height, width)
-        Returns:
-            Same shape as input.
-        """
-        # Spectral path: global convolution in Fourier space
-        x_spectral = self.spectral_conv(x)
-
-        # Local path: pointwise linear (1x1 conv)
-        x_local = self.linear(x)
-
-        # Combine and activate — GELU is smoother than ReLU, good for physics
-        return F.gelu(x_spectral + x_local)
+    @wraps(func)
+    def wrapper(*args, **kwargs):
+        start = time.perf_counter()
+        result = func(*args, **kwargs)
+        elapsed = time.perf_counter() - start
+        print(f"[TIMER] {func.__name__}: {elapsed:.4f}s")
+        return result
+    return wrapper
 
 
-def test_fno_layer():
-    """Verify FNO layer output shapes and gradient flow."""
-    batch, channels, H, W = 2, 32, 64, 64
-    modes1, modes2 = 12, 12  # Keep 12 low-frequency modes in each direction
+# --- Exercise 5: Error Handling & Defensive Programming -----------------------
+# "Write a function that loads and validates simulation config from a dict.
+#  Handle missing keys, wrong types, and invalid values gracefully."
 
-    layer = FNOLayer(channels, modes1, modes2)
-    x = torch.randn(batch, channels, H, W)
-    y = layer(x)
+def validate_config(config: Dict) -> Dict:
+    """
+    Validate and normalize a training configuration dictionary.
 
-    assert y.shape == x.shape, f"Shape mismatch: {y.shape} vs {x.shape}"
-    y.sum().backward()
-    assert layer.spectral_conv.weights1.grad is not None
-    print("[PASS] FNO Layer: shape, gradient checks passed")
+    Returns a clean config dict with defaults filled in.
+    Raises ValueError with a clear message if something is wrong.
+    """
+    required_keys = ["model_type", "learning_rate", "num_epochs"]
+    missing = [k for k in required_keys if k not in config]
+    if missing:
+        raise ValueError(f"Missing required config keys: {missing}")
+
+    # Type checking with clear messages
+    if not isinstance(config["learning_rate"], (int, float)):
+        raise ValueError(
+            f"learning_rate must be numeric, got {type(config['learning_rate']).__name__}"
+        )
+
+    lr = float(config["learning_rate"])
+    if not (1e-8 <= lr <= 1.0):
+        raise ValueError(f"learning_rate={lr} is outside valid range [1e-8, 1.0]")
+
+    valid_models = {"mlp", "gnn", "fno", "siren"}
+    if config["model_type"] not in valid_models:
+        raise ValueError(
+            f"model_type='{config['model_type']}' not in {valid_models}"
+        )
+
+    # Return clean config with defaults
+    return {
+        "model_type": config["model_type"],
+        "learning_rate": lr,
+        "num_epochs": int(config["num_epochs"]),
+        "batch_size": config.get("batch_size", 32),
+        "hidden_dim": config.get("hidden_dim", 128),
+        "weight_decay": float(config.get("weight_decay", 1e-4)),
+        "device": config.get("device", "cuda" if torch.cuda.is_available() else "cpu"),
+    }
 
 
 # ==============================================================================
-# QUESTION 3: Implement a GNN Message-Passing Layer
+# PART 2: NUMPY / TENSOR OPERATIONS
 # ==============================================================================
-# Context: Relevant to candidate's DAC paper (chip placement on netlists) and
-# mesh-based EM simulation (Pfaff et al., "Learning Mesh-Based Simulation").
-#
-# INTERVIEWER PROMPT:
-#   "Implement a GNN message-passing layer from scratch. Given node features
-#    and an edge index, compute edge messages from pairs of node features,
-#    aggregate them per node (sum), and update node features."
-#
-# MESSAGE PASSING:
-#   1. For each edge (i,j): message_ij = MLP([h_i || h_j || e_ij])
-#   2. Aggregate: m_i = SUM_{j in N(i)} message_ij
-#   3. Update: h_i' = MLP([h_i || m_i])
+# Core data manipulation — the daily bread of ML research engineering.
 # ==============================================================================
 
-class MessagePassingLayer(nn.Module):
+
+# --- Exercise 6: Broadcasting & Vectorized Operations -------------------------
+# "Compute pairwise Euclidean distances between two sets of points WITHOUT loops."
+
+def pairwise_distances(x: torch.Tensor, y: torch.Tensor) -> torch.Tensor:
     """
-    A general message-passing GNN layer.
+    Compute pairwise Euclidean distances between two point sets.
 
-    This follows the "encode-process-decode" paradigm used in MeshGraphNets
-    (Pfaff et al.) and GraphCast for physics simulation.
+    Args:
+        x: shape (N, D) — N points in D dimensions
+        y: shape (M, D) — M points in D dimensions
+
+    Returns:
+        dist: shape (N, M) — dist[i,j] = ||x[i] - y[j]||
+
+    Key concept: ||a - b||^2 = ||a||^2 + ||b||^2 - 2*a·b
+    This avoids the O(NMD) loop and uses O(NM + ND + MD) with BLAS.
+    """
+    # Method 1: Using the expansion trick (numerically less stable but fast)
+    xx = (x * x).sum(dim=1, keepdim=True)   # (N, 1)
+    yy = (y * y).sum(dim=1, keepdim=True).T  # (1, M)
+    xy = x @ y.T                              # (N, M)
+    dist_sq = xx + yy - 2 * xy
+    # Clamp to avoid negative values from numerical errors
+    return torch.sqrt(dist_sq.clamp(min=0.0))
+
+    # Method 2 (simpler, more memory): torch.cdist(x, y)
+
+
+# --- Exercise 7: Advanced Indexing — Gather and Scatter -----------------------
+# "Given node features and an edge list, gather source/target node features
+#  for all edges, then scatter messages back to nodes."
+
+def gather_scatter_demo(
+    node_features: torch.Tensor,  # (num_nodes, feature_dim)
+    edge_index: torch.Tensor,      # (2, num_edges) — [src; tgt]
+) -> torch.Tensor:
+    """
+    GNN-style gather-scatter: collect neighbor info, aggregate per node.
+
+    This is the fundamental operation behind ALL graph neural networks.
+    Understanding indexing here is critical for mesh-based simulation ML.
+    """
+    src, tgt = edge_index[0], edge_index[1]
+    num_nodes = node_features.shape[0]
+
+    # GATHER: get features for each edge's source and target
+    src_feat = node_features[src]  # (num_edges, feature_dim)
+    tgt_feat = node_features[tgt]  # (num_edges, feature_dim)
+
+    # Compute messages (simple example: difference of features)
+    messages = src_feat - tgt_feat  # (num_edges, feature_dim)
+
+    # SCATTER: aggregate messages back to target nodes (sum)
+    aggregated = torch.zeros_like(node_features)
+    aggregated.index_add_(0, tgt, messages)
+
+    # Alternative: scatter_add from torch_scatter (PyG) or torch.scatter_add
+    # aggregated = torch.zeros_like(node_features)
+    # aggregated.scatter_add_(0, tgt.unsqueeze(1).expand_as(messages), messages)
+
+    return aggregated
+
+
+# --- Exercise 8: Masking & Boolean Indexing -----------------------------------
+# "Filter simulation data: keep only samples where the error is below a threshold
+#  and the frequency is within a range."
+
+def filter_simulation_data(
+    errors: torch.Tensor,       # (N,)
+    frequencies: torch.Tensor,  # (N,)
+    fields: torch.Tensor,       # (N, H, W) — field data
+    max_error: float = 0.1,
+    freq_range: Tuple[float, float] = (1e9, 10e9),
+) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
+    """
+    Filter data using boolean masks. Returns filtered errors, freqs, fields.
+
+    Key concepts:
+    - Boolean indexing: tensor[mask] returns elements where mask is True
+    - Combining masks with & (and), | (or), ~ (not)
+    - This is vectorized — no Python loops needed
+    """
+    # Build boolean masks
+    error_mask = errors < max_error
+    freq_mask = (frequencies >= freq_range[0]) & (frequencies <= freq_range[1])
+
+    # Combine masks
+    valid_mask = error_mask & freq_mask
+
+    # Apply mask to all tensors consistently
+    return errors[valid_mask], frequencies[valid_mask], fields[valid_mask]
+
+
+# --- Exercise 9: Reshaping & Einsum ------------------------------------------
+# "Given a batch of 2D field predictions, compute the relative L2 error
+#  per sample (not averaged across the batch)."
+
+def per_sample_relative_l2(
+    pred: torch.Tensor,   # (batch, H, W)
+    target: torch.Tensor,  # (batch, H, W)
+) -> torch.Tensor:
+    """
+    Compute relative L2 error for each sample: ||pred - target|| / ||target||
+
+    Returns shape (batch,) — one error value per sample.
+
+    Key concept: Use .reshape(batch, -1) to flatten spatial dims,
+    then reduce over the flattened dim only (not the batch dim).
+    """
+    batch = pred.shape[0]
+    # Flatten spatial dimensions
+    p = pred.reshape(batch, -1)   # (batch, H*W)
+    t = target.reshape(batch, -1)  # (batch, H*W)
+
+    # L2 norm along the spatial dimension (dim=1), keep batch dim
+    diff_norm = torch.norm(p - t, dim=1)    # (batch,)
+    target_norm = torch.norm(t, dim=1)       # (batch,)
+
+    # Avoid division by zero
+    return diff_norm / target_norm.clamp(min=1e-8)
+
+
+# --- Exercise 10: Efficient Batch Operations ----------------------------------
+# "Normalize each sample in a batch independently (zero mean, unit variance)
+#  along the spatial dimensions."
+
+def per_sample_normalize(x: torch.Tensor) -> torch.Tensor:
+    """
+    Normalize each sample to zero mean and unit variance.
+
+    Input:  (batch, channels, H, W)
+    Output: (batch, channels, H, W) — each sample independently normalized
+
+    This is InstanceNorm without learnable params.
+    Useful for simulation data where each sample has different magnitude.
+    """
+    # Compute mean and std over spatial dims (H, W), keep batch and channel
+    mean = x.mean(dim=(-2, -1), keepdim=True)  # (B, C, 1, 1)
+    std = x.std(dim=(-2, -1), keepdim=True)    # (B, C, 1, 1)
+    return (x - mean) / std.clamp(min=1e-8)
+
+
+# ==============================================================================
+# PART 3: PYTORCH PRACTICAL PATTERNS
+# ==============================================================================
+# Building real ML pipelines — what you'd actually do on the job.
+# ==============================================================================
+
+
+# --- Exercise 11: Custom Dataset for Simulation Data --------------------------
+# "Write a PyTorch Dataset for loading simulation field data from disk.
+#  Each sample has different spatial resolution (variable-size meshes)."
+
+class SimulationDataset(Dataset):
+    """
+    Custom Dataset for simulation field data stored as .npz files.
+
+    Each file contains:
+      - 'params': input parameters (e.g., geometry, frequency), shape (P,)
+      - 'field':  output field values, shape (N_i, F) — N_i varies per sample
+      - 'coords': node coordinates, shape (N_i, D)
+
+    Key design decisions:
+      1. Lazy loading: don't load all data into RAM at init
+      2. Handle variable sizes: each mesh has different N_i
+      3. Return dict (not tuple) for clarity
     """
 
-    def __init__(self, node_dim: int, edge_dim: int, hidden_dim: int):
-        """
-        Args:
-            node_dim:   Dimension of input node features.
-            edge_dim:   Dimension of edge features (0 if no edge features).
-            hidden_dim: Hidden dimension for MLPs.
-        """
-        super().__init__()
-        self.node_dim = node_dim
-
-        # Edge message MLP: takes concatenated [source_node, target_node, edge_features]
-        edge_input_dim = 2 * node_dim + edge_dim
-        self.edge_mlp = nn.Sequential(
-            nn.Linear(edge_input_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, hidden_dim),
+    def __init__(self, data_dir: str, transform=None):
+        self.data_dir = data_dir
+        self.transform = transform
+        # Only store file paths at init — lazy loading
+        self.file_paths = sorted(
+            [os.path.join(data_dir, f) for f in os.listdir(data_dir) if f.endswith(".npz")]
         )
 
-        # Node update MLP: takes concatenated [current_node, aggregated_messages]
-        self.node_mlp = nn.Sequential(
-            nn.Linear(node_dim + hidden_dim, hidden_dim),
-            nn.ReLU(),
-            nn.Linear(hidden_dim, node_dim),  # Output same dim for residual
-        )
+    def __len__(self) -> int:
+        return len(self.file_paths)
 
-    def forward(
-        self,
-        node_features: torch.Tensor,
-        edge_index: torch.Tensor,
-        edge_features: Optional[torch.Tensor] = None,
-    ) -> torch.Tensor:
-        """
-        Forward pass: message computation -> aggregation -> node update.
+    def __getitem__(self, idx: int) -> Dict[str, torch.Tensor]:
+        data = np.load(self.file_paths[idx])
 
-        Args:
-            node_features: Shape (num_nodes, node_dim)
-            edge_index:    Shape (2, num_edges) — [source_indices; target_indices]
-            edge_features: Shape (num_edges, edge_dim) or None
+        sample = {
+            "params": torch.tensor(data["params"], dtype=torch.float32),
+            "coords": torch.tensor(data["coords"], dtype=torch.float32),
+            "field": torch.tensor(data["field"], dtype=torch.float32),
+        }
 
-        Returns:
-            Updated node features. Shape (num_nodes, node_dim)
-        """
-        src_idx = edge_index[0]  # Source node indices, shape: (num_edges,)
-        tgt_idx = edge_index[1]  # Target node indices, shape: (num_edges,)
+        if self.transform is not None:
+            sample = self.transform(sample)
 
-        # ---- Step 1: Compute edge messages ----
-        # Gather features of source and target nodes for each edge
-        src_features = node_features[src_idx]  # (num_edges, node_dim)
-        tgt_features = node_features[tgt_idx]  # (num_edges, node_dim)
+        return sample
 
-        # Concatenate source, target, and edge features
-        if edge_features is not None:
-            edge_input = torch.cat([src_features, tgt_features, edge_features], dim=-1)
+
+def collate_variable_size(batch: List[Dict]) -> Dict[str, torch.Tensor]:
+    """
+    Custom collate function for variable-size simulation data.
+
+    Since each sample has different number of nodes N_i, we can't just stack.
+    Options:
+      1. Pad to max size (shown here) — simple, works with standard PyTorch
+      2. Concatenate with batch index (PyG-style) — more memory efficient
+      3. Use nested tensors (PyTorch 2.0+)
+    """
+    # Fixed-size: stack normally
+    params = torch.stack([s["params"] for s in batch])  # (B, P)
+
+    # Variable-size: pad to max
+    max_nodes = max(s["coords"].shape[0] for s in batch)
+    coord_dim = batch[0]["coords"].shape[1]
+    field_dim = batch[0]["field"].shape[1]
+
+    padded_coords = torch.zeros(len(batch), max_nodes, coord_dim)
+    padded_fields = torch.zeros(len(batch), max_nodes, field_dim)
+    masks = torch.zeros(len(batch), max_nodes, dtype=torch.bool)
+
+    for i, s in enumerate(batch):
+        n = s["coords"].shape[0]
+        padded_coords[i, :n] = s["coords"]
+        padded_fields[i, :n] = s["field"]
+        masks[i, :n] = True  # True = valid node, False = padding
+
+    return {
+        "params": params,
+        "coords": padded_coords,
+        "field": padded_fields,
+        "mask": masks,  # CRITICAL: loss/metrics must use this mask!
+    }
+
+
+# Usage:
+# loader = DataLoader(dataset, batch_size=8, collate_fn=collate_variable_size)
+
+
+# --- Exercise 12: Complete Training Loop with Best Practices ------------------
+# "Write a training function with validation, early stopping, checkpointing,
+#  and proper device management."
+
+def train_model(
+    model: nn.Module,
+    train_loader: DataLoader,
+    val_loader: DataLoader,
+    num_epochs: int = 100,
+    lr: float = 1e-3,
+    patience: int = 10,
+    save_path: str = "best_model.pt",
+    device: str = "cuda",
+):
+    """
+    Production-quality training loop with all standard practices.
+
+    Features:
+    - AdamW optimizer with weight decay
+    - Cosine annealing LR schedule
+    - Gradient clipping
+    - Early stopping on validation loss
+    - Model checkpointing (save best)
+    - Proper train/eval mode switching
+    - Mixed precision training (AMP)
+    """
+    model = model.to(device)
+    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=num_epochs)
+    scaler = torch.amp.GradScaler("cuda")  # For mixed precision
+
+    best_val_loss = float("inf")
+    patience_counter = 0
+
+    for epoch in range(num_epochs):
+        # ---- TRAINING ----
+        model.train()
+        train_loss = 0.0
+        num_batches = 0
+
+        for batch in train_loader:
+            # Move data to device
+            x = batch["input"].to(device)
+            y = batch["target"].to(device)
+
+            optimizer.zero_grad(set_to_none=True)  # Slightly faster than zero_grad()
+
+            # Mixed precision forward pass
+            with torch.amp.autocast("cuda"):
+                pred = model(x)
+                loss = F.mse_loss(pred, y)
+
+            # Mixed precision backward pass
+            scaler.scale(loss).backward()
+            scaler.unscale_(optimizer)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            scaler.step(optimizer)
+            scaler.update()
+
+            train_loss += loss.item()  # .item() to avoid memory leak!
+            num_batches += 1
+
+        train_loss /= num_batches
+        scheduler.step()
+
+        # ---- VALIDATION ----
+        model.eval()
+        val_loss = 0.0
+        num_val_batches = 0
+
+        with torch.no_grad():  # CRITICAL: save memory, prevent gradient leakage
+            for batch in val_loader:
+                x = batch["input"].to(device)
+                y = batch["target"].to(device)
+
+                with torch.amp.autocast("cuda"):
+                    pred = model(x)
+                    loss = F.mse_loss(pred, y)
+
+                val_loss += loss.item()
+                num_val_batches += 1
+
+        val_loss /= num_val_batches
+
+        # ---- EARLY STOPPING & CHECKPOINTING ----
+        if val_loss < best_val_loss:
+            best_val_loss = val_loss
+            patience_counter = 0
+            torch.save({
+                "epoch": epoch,
+                "model_state_dict": model.state_dict(),
+                "optimizer_state_dict": optimizer.state_dict(),
+                "val_loss": val_loss,
+            }, save_path)
         else:
-            edge_input = torch.cat([src_features, tgt_features], dim=-1)
+            patience_counter += 1
+            if patience_counter >= patience:
+                print(f"Early stopping at epoch {epoch}")
+                break
 
-        messages = self.edge_mlp(edge_input)  # (num_edges, hidden_dim)
+        if epoch % 10 == 0:
+            current_lr = optimizer.param_groups[0]["lr"]
+            print(
+                f"Epoch {epoch:3d} | "
+                f"Train: {train_loss:.6f} | "
+                f"Val: {val_loss:.6f} | "
+                f"LR: {current_lr:.2e} | "
+                f"Best: {best_val_loss:.6f}"
+            )
 
-        # ---- Step 2: Aggregate messages per target node ----
-        # Sum aggregation: for each target node, sum all incoming messages.
-        # scatter_add is the standard way; we use index_add_ for vanilla PyTorch.
-        num_nodes = node_features.shape[0]
-        aggregated = torch.zeros(
-            num_nodes, messages.shape[-1],
-            device=node_features.device, dtype=node_features.dtype
-        )
-        # index_add_(dim, index, source): aggregated[tgt_idx[i]] += messages[i]
-        aggregated.index_add_(0, tgt_idx, messages)  # (num_nodes, hidden_dim)
-
-        # ---- Step 3: Update node features ----
-        # Concatenate current features with aggregated messages
-        node_input = torch.cat([node_features, aggregated], dim=-1)  # (N, node_dim + hidden)
-        node_update = self.node_mlp(node_input)  # (N, node_dim)
-
-        # Residual connection: critical for deep GNNs to avoid oversmoothing
-        return node_features + node_update
+    # Load best model
+    checkpoint = torch.load(save_path, weights_only=True)
+    model.load_state_dict(checkpoint["model_state_dict"])
+    return model
 
 
-def test_message_passing():
-    """Verify message passing on a small graph."""
-    num_nodes, node_dim, edge_dim, hidden_dim = 6, 16, 4, 32
+# --- Exercise 13: Model Definition with Flexible Architecture ----------------
+# "Write a simple but flexible MLP that could serve as a surrogate model."
 
-    # Create a small graph: 6 nodes, 8 directed edges
-    edge_index = torch.tensor([
-        [0, 1, 2, 3, 1, 2, 4, 5],  # source
-        [1, 2, 3, 0, 4, 5, 0, 0],  # target
-    ], dtype=torch.long)
-    num_edges = edge_index.shape[1]
-
-    node_features = torch.randn(num_nodes, node_dim)
-    edge_features = torch.randn(num_edges, edge_dim)
-
-    layer = MessagePassingLayer(node_dim, edge_dim, hidden_dim)
-    out = layer(node_features, edge_index, edge_features)
-
-    assert out.shape == (num_nodes, node_dim), f"Expected {(num_nodes, node_dim)}, got {out.shape}"
-    out.sum().backward()
-    print("[PASS] Message Passing Layer: shape, gradient checks passed")
-
-
-# ==============================================================================
-# QUESTION 4: Implement a Simple Diffusion Training Step
-# ==============================================================================
-# Context: Relevant to candidate's two diffusion papers (EDISCO for TSP,
-# DAC for chip placement). Core of score-based/denoising diffusion models.
-#
-# INTERVIEWER PROMPT:
-#   "Implement the forward diffusion process and one training step for a
-#    denoising diffusion model. Show: (1) how to add noise at an arbitrary
-#    timestep, (2) the noise-prediction loss, and (3) a complete training
-#    iteration."
-#
-# DDPM FORWARD PROCESS:
-#   q(x_t | x_0) = N(x_t; sqrt(alpha_bar_t) * x_0, (1 - alpha_bar_t) * I)
-#   x_t = sqrt(alpha_bar_t) * x_0 + sqrt(1 - alpha_bar_t) * epsilon
-# ==============================================================================
-
-class DiffusionTrainer:
+class SurrogateMLP(nn.Module):
     """
-    Implements the DDPM (Ho et al., 2020) forward process and training objective.
+    Flexible MLP for surrogate modeling: params → field values.
 
-    Key insight: we can sample x_t directly from x_0 (no need to iterate
-    through all previous timesteps) using the closed-form marginal.
+    Demonstrates:
+    - Dynamic layer construction from config
+    - Residual connections (optional)
+    - Multiple normalization options
+    - Proper weight initialization
     """
 
     def __init__(
         self,
-        model: nn.Module,
-        num_timesteps: int = 1000,
-        beta_start: float = 1e-4,
-        beta_end: float = 0.02,
-    ):
-        """
-        Args:
-            model:          The noise-prediction network (e.g., U-Net).
-            num_timesteps:  Number of diffusion steps T.
-            beta_start:     Starting noise schedule value.
-            beta_end:       Ending noise schedule value.
-        """
-        self.model = model
-        self.num_timesteps = num_timesteps
-
-        # ---- Define the noise schedule ----
-        # Linear schedule (as in original DDPM). Cosine schedule is often better.
-        betas = torch.linspace(beta_start, beta_end, num_timesteps)
-
-        # Precompute useful quantities for the closed-form forward process
-        alphas = 1.0 - betas                              # alpha_t = 1 - beta_t
-        alpha_bar = torch.cumprod(alphas, dim=0)          # alpha_bar_t = prod_{s=1}^{t} alpha_s
-        self.sqrt_alpha_bar = alpha_bar.sqrt()             # sqrt(alpha_bar_t)
-        self.sqrt_one_minus_alpha_bar = (1 - alpha_bar).sqrt()  # sqrt(1 - alpha_bar_t)
-
-    def forward_process(
-        self, x_0: torch.Tensor, t: torch.Tensor, noise: Optional[torch.Tensor] = None
-    ) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Add noise to clean data x_0 to get x_t (the forward/diffusion process).
-
-        q(x_t | x_0) = N(sqrt(alpha_bar_t) * x_0, (1 - alpha_bar_t) * I)
-
-        Args:
-            x_0:   Clean data.     Shape: (batch, ...)
-            t:     Timestep index. Shape: (batch,), values in [0, T-1]
-            noise: Optional pre-sampled noise (for reproducibility).
-
-        Returns:
-            x_t:   Noisy data at timestep t. Same shape as x_0.
-            noise: The noise that was added (needed for loss computation).
-        """
-        if noise is None:
-            noise = torch.randn_like(x_0)
-
-        # Move schedule tensors to the same device as data
-        sqrt_ab = self.sqrt_alpha_bar.to(x_0.device)
-        sqrt_omab = self.sqrt_one_minus_alpha_bar.to(x_0.device)
-
-        # Gather the schedule values for each sample's timestep
-        # Then reshape for broadcasting: (batch,) -> (batch, 1, 1, ...) to match x_0
-        ndim = x_0.dim()
-        shape = (-1,) + (1,) * (ndim - 1)  # e.g., (-1, 1, 1, 1) for images
-
-        sqrt_ab_t = sqrt_ab[t].reshape(shape)       # (batch, 1, ...)
-        sqrt_omab_t = sqrt_omab[t].reshape(shape)   # (batch, 1, ...)
-
-        # Reparameterization: x_t = sqrt(alpha_bar_t) * x_0 + sqrt(1-alpha_bar_t) * eps
-        x_t = sqrt_ab_t * x_0 + sqrt_omab_t * noise
-
-        return x_t, noise
-
-    def compute_loss(self, x_0: torch.Tensor) -> torch.Tensor:
-        """
-        Compute the simplified DDPM training loss for one batch.
-
-        L_simple = E_{t, x_0, eps} [ || eps - eps_theta(x_t, t) ||^2 ]
-
-        The model learns to predict the noise that was added, given the
-        noisy sample and the timestep.
-
-        Args:
-            x_0: Clean training data. Shape: (batch, ...)
-
-        Returns:
-            Scalar loss value.
-        """
-        batch_size = x_0.shape[0]
-
-        # Sample random timesteps uniformly for each sample in the batch
-        t = torch.randint(0, self.num_timesteps, (batch_size,), device=x_0.device)
-
-        # Sample noise and compute noisy data
-        noise = torch.randn_like(x_0)
-        x_t, _ = self.forward_process(x_0, t, noise=noise)
-
-        # Predict the noise using the model
-        noise_pred = self.model(x_t, t)
-
-        # MSE loss between true noise and predicted noise
-        loss = F.mse_loss(noise_pred, noise)
-
-        return loss
-
-    def training_step(self, x_0: torch.Tensor, optimizer: torch.optim.Optimizer) -> float:
-        """
-        Execute one complete training iteration.
-
-        Args:
-            x_0:       Clean data batch. Shape: (batch, ...)
-            optimizer: The optimizer for the model parameters.
-
-        Returns:
-            The loss value as a Python float.
-        """
-        # Standard PyTorch training pattern
-        self.model.train()
-        optimizer.zero_grad()        # Clear old gradients
-        loss = self.compute_loss(x_0)
-        loss.backward()              # Compute gradients
-        torch.nn.utils.clip_grad_norm_(self.model.parameters(), max_norm=1.0)  # Stabilize training
-        optimizer.step()             # Update weights
-
-        return loss.item()
-
-
-class SimpleNoisePredictor(nn.Module):
-    """A minimal noise prediction network for testing (NOT production quality)."""
-
-    def __init__(self, data_dim: int, hidden_dim: int = 128, num_timesteps: int = 1000):
-        super().__init__()
-        self.time_embed = nn.Embedding(num_timesteps, hidden_dim)
-        self.net = nn.Sequential(
-            nn.Linear(data_dim + hidden_dim, hidden_dim),
-            nn.GELU(),
-            nn.Linear(hidden_dim, hidden_dim),
-            nn.GELU(),
-            nn.Linear(hidden_dim, data_dim),
-        )
-
-    def forward(self, x_t: torch.Tensor, t: torch.Tensor) -> torch.Tensor:
-        """Predict the noise given noisy data and timestep."""
-        t_emb = self.time_embed(t)  # (batch, hidden_dim)
-        # Flatten spatial dims if needed, then concat with time embedding
-        x_flat = x_t.reshape(x_t.shape[0], -1)
-        inp = torch.cat([x_flat, t_emb], dim=-1)
-        return self.net(inp).reshape(x_t.shape)
-
-
-def test_diffusion_training():
-    """Verify one complete diffusion training step."""
-    data_dim, batch_size = 32, 8
-
-    model = SimpleNoisePredictor(data_dim)
-    optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-    trainer = DiffusionTrainer(model, num_timesteps=1000)
-
-    x_0 = torch.randn(batch_size, data_dim)  # Fake clean data
-
-    # Run 3 training steps, loss should decrease (or at least not crash)
-    losses = []
-    for step in range(3):
-        loss = trainer.training_step(x_0, optimizer)
-        losses.append(loss)
-
-    print(f"[PASS] Diffusion Training: 3 steps completed, losses = {[f'{l:.4f}' for l in losses]}")
-
-
-# ==============================================================================
-# QUESTION 5: Implement a SIREN Layer
-# ==============================================================================
-# Context: Relevant to Ansys SimAI's implicit neural representations (INRs).
-# SIREN uses sinusoidal activations to learn continuous functions, enabling
-# representation of fine-grained physical fields (EM, thermal, stress).
-#
-# INTERVIEWER PROMPT:
-#   "Implement a SIREN (Sinusoidal Representation Network) layer. Show the
-#    sinusoidal activation, and crucially, the proper weight initialization
-#    that makes SIREN work. Explain why the initialization matters."
-#
-# SIREN:
-#   y = sin(omega_0 * (Wx + b))
-#   First layer:  W ~ Uniform(-1/n, 1/n)
-#   Hidden layers: W ~ Uniform(-sqrt(6/(n*omega_0^2)), sqrt(6/(n*omega_0^2)))
-# ==============================================================================
-
-class SIRENLayer(nn.Module):
-    """
-    A single SIREN layer: Linear transform followed by sinusoidal activation.
-
-    Key insight: sin(.) preserves the distribution of activations through depth
-    IF the weights are initialized correctly. The initialization ensures that
-    the input to sin(.) remains in [-pi, pi] (approximately), preventing the
-    activations from collapsing or exploding.
-
-    Reference: Sitzmann et al., "Implicit Neural Representations with Periodic
-    Activation Functions" (NeurIPS 2020)
-    """
-
-    def __init__(
-        self,
-        in_features: int,
-        out_features: int,
-        omega_0: float = 30.0,
-        is_first_layer: bool = False,
-    ):
-        """
-        Args:
-            in_features:    Input dimension.
-            out_features:   Output dimension.
-            omega_0:        Frequency scaling factor. Higher = more detail.
-                            30.0 is the default from the paper.
-            is_first_layer: Whether this is the first layer (different init).
-        """
-        super().__init__()
-        self.omega_0 = omega_0
-        self.is_first_layer = is_first_layer
-        self.in_features = in_features
-
-        self.linear = nn.Linear(in_features, out_features)
-        self._init_weights()
-
-    def _init_weights(self):
-        """
-        Critical: SIREN requires specific initialization to work properly.
-
-        The goal is to keep the pre-activation values (omega_0 * (Wx + b))
-        distributed so that sin(.) operates in its full range.
-
-        First layer:
-          - Input is typically normalized to [-1, 1]
-          - W ~ Uniform(-1/n, 1/n) ensures output stays bounded
-          - After scaling by omega_0, this gives good coverage of sin()
-
-        Hidden layers:
-          - Input comes from sin(), which is in [-1, 1]
-          - W ~ Uniform(-sqrt(6/n)/omega_0, sqrt(6/n)/omega_0)
-          - This is derived from requiring Var(output) = 1 after sin()
-          - The factor sqrt(6/n) comes from the variance of a uniform distribution
-            combined with E[cos^2] = 1/2 (derivative of sin used in backprop)
-        """
-        with torch.no_grad():
-            if self.is_first_layer:
-                # First layer: uniform(-1/n, 1/n) so that omega_0 * Wx ~ Uniform(-omega_0, omega_0)
-                bound = 1.0 / self.in_features
-            else:
-                # Hidden layers: carefully chosen so that the distribution is
-                # preserved through the sin() activation
-                bound = math.sqrt(6.0 / self.in_features) / self.omega_0
-
-            self.linear.weight.uniform_(-bound, bound)
-
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        """
-        Forward pass: linear transform, scale by omega_0, then sin().
-
-        Args:
-            x: Input tensor. Shape: (..., in_features)
-        Returns:
-            Output tensor. Shape: (..., out_features)
-        """
-        # omega_0 controls the frequency of the sinusoidal activation.
-        # Higher omega_0 allows the network to represent higher-frequency details.
-        return torch.sin(self.omega_0 * self.linear(x))
-
-
-class SIREN(nn.Module):
-    """
-    A complete SIREN network for implicit neural representation.
-
-    Takes coordinates (x, y) or (x, y, z) as input and outputs field values
-    (e.g., E-field magnitude, temperature). Can represent continuous fields
-    at arbitrary resolution.
-    """
-
-    def __init__(
-        self,
-        in_features: int = 2,       # e.g., 2D coordinates
-        out_features: int = 1,       # e.g., scalar field value
-        hidden_features: int = 256,
-        num_hidden_layers: int = 3,
-        omega_0: float = 30.0,
+        input_dim: int,
+        output_dim: int,
+        hidden_dims: List[int] = [256, 256, 256],
+        activation: str = "gelu",
+        norm: str = "layer",
+        dropout: float = 0.0,
     ):
         super().__init__()
+
+        act_fn = {"relu": nn.ReLU, "gelu": nn.GELU, "silu": nn.SiLU}[activation]
+        norm_fn = {
+            "layer": nn.LayerNorm,
+            "batch": nn.BatchNorm1d,
+            "none": lambda d: nn.Identity(),
+        }[norm]
 
         layers = []
+        in_dim = input_dim
+        for h_dim in hidden_dims:
+            layers.extend([
+                nn.Linear(in_dim, h_dim),
+                norm_fn(h_dim),
+                act_fn(),
+                nn.Dropout(dropout),
+            ])
+            in_dim = h_dim
 
-        # First layer (different initialization)
-        layers.append(SIRENLayer(in_features, hidden_features, omega_0, is_first_layer=True))
+        self.backbone = nn.Sequential(*layers)
+        self.head = nn.Linear(in_dim, output_dim)
 
-        # Hidden layers
-        for _ in range(num_hidden_layers):
-            layers.append(SIRENLayer(hidden_features, hidden_features, omega_0, is_first_layer=False))
+        # Initialize weights (Kaiming for ReLU/GELU, Xavier for others)
+        self._init_weights()
 
-        self.network = nn.Sequential(*layers)
+    def _init_weights(self):
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.kaiming_normal_(m.weight, nonlinearity="relu")
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
 
-        # Final linear layer (no sin activation — we want raw output values)
-        self.final_layer = nn.Linear(hidden_features, out_features)
-        # Initialize final layer similarly to hidden layers
-        with torch.no_grad():
-            bound = math.sqrt(6.0 / hidden_features) / omega_0
-            self.final_layer.weight.uniform_(-bound, bound)
-
-    def forward(self, coords: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            coords: Spatial coordinates. Shape: (batch, in_features)
-        Returns:
-            Field values. Shape: (batch, out_features)
-        """
-        features = self.network(coords)
-        return self.final_layer(features)
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """x: (batch, input_dim) → (batch, output_dim)"""
+        return self.head(self.backbone(x))
 
 
-def test_siren():
-    """Verify SIREN layer and full network."""
-    batch_size = 100
+# --- Exercise 14: Learning Rate Finder (Practical ML Tool) --------------------
+# "Implement a simple LR range test to find the optimal learning rate."
 
-    # Test single layer
-    layer = SIRENLayer(2, 64, omega_0=30.0, is_first_layer=True)
-    coords = torch.rand(batch_size, 2) * 2 - 1  # Coordinates in [-1, 1]
-    out = layer(coords)
-    assert out.shape == (batch_size, 64)
-    # Check output is in [-1, 1] (sin output)
-    assert out.min() >= -1.0 and out.max() <= 1.0, "SIREN output should be in [-1, 1]"
+@torch.no_grad()
+def count_parameters(model: nn.Module) -> Dict[str, int]:
+    """
+    Count total and trainable parameters in a model.
 
-    # Test full network: learn a 2D field from coordinates
-    siren = SIREN(in_features=2, out_features=1, hidden_features=64, num_hidden_layers=2)
-    field_values = siren(coords)
-    assert field_values.shape == (batch_size, 1)
-    field_values.sum().backward()
-    print("[PASS] SIREN: layer and network shape/gradient checks passed")
+    Useful for: reporting in papers, estimating memory, comparing architectures.
+    """
+    total = sum(p.numel() for p in model.parameters())
+    trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    return {
+        "total": total,
+        "trainable": trainable,
+        "frozen": total - trainable,
+        "total_MB": total * 4 / (1024 ** 2),  # Assuming float32
+    }
+
+
+# --- Exercise 15: Inference with Uncertainty (Practical for Simulation) -------
+# "Add prediction uncertainty using MC-Dropout. This is critical for simulation
+#  surrogates — we need to know WHEN the model is uncertain."
+
+def predict_with_uncertainty(
+    model: nn.Module,
+    x: torch.Tensor,
+    n_samples: int = 30,
+    device: str = "cpu",
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """
+    Monte Carlo Dropout for uncertainty estimation.
+
+    Runs N forward passes with dropout ENABLED at inference time.
+    The variance across predictions estimates epistemic uncertainty.
+
+    Args:
+        model: Model with Dropout layers (must have dropout > 0)
+        x: Input tensor, shape (batch, ...)
+        n_samples: Number of MC samples (30 is usually sufficient)
+
+    Returns:
+        mean: Mean prediction, shape same as model output
+        std:  Standard deviation (uncertainty), same shape
+
+    Why this matters for Synopsys:
+    - A surrogate model that says "I don't know" is safer than one that
+      silently gives wrong answers. High uncertainty → fall back to HFSS.
+    """
+    model.train()  # Keep dropout ON (this is the key trick!)
+    x = x.to(device)
+
+    predictions = []
+    for _ in range(n_samples):
+        with torch.no_grad():  # Still no gradients needed
+            pred = model(x)
+        predictions.append(pred)
+
+    predictions = torch.stack(predictions)  # (n_samples, batch, ...)
+    mean = predictions.mean(dim=0)
+    std = predictions.std(dim=0)
+
+    model.eval()  # Restore to eval mode
+    return mean, std
 
 
 # ==============================================================================
-# PART 2: "HOW WOULD YOU IMPLEMENT X" VERBAL QUESTIONS
+# PART 4: BUG SPOTTING — COMMON PYTORCH GOTCHAS
 # ==============================================================================
-# These are engineering judgment questions, not coding questions.
-# The answers below are structured talking points.
+# "Can you spot the bug?" — quick-fire questions an interviewer might ask.
 # ==============================================================================
 
-VERBAL_QUESTIONS = """
+GOTCHAS = """
 ================================================================================
-PART 2: VERBAL "HOW WOULD YOU IMPLEMENT X" QUESTIONS
-================================================================================
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Q1: "How would you handle a dataset of 10,000 HFSS simulations with varying
-     mesh sizes for training a surrogate model?"
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-KEY CHALLENGE: Each simulation has a different mesh, so tensor shapes differ.
-
-APPROACH 1 — Interpolate to a fixed grid:
-  - Interpolate all simulation results onto a common regular grid.
-  - Enables standard CNN/FNO architectures with fixed tensor shapes.
-  - Trade-off: loss of resolution near fine geometry features.
-  - Implementation: scipy.interpolate or torch-based interpolation during
-    preprocessing. Store as HDF5 with fixed shape.
-
-APPROACH 2 — Graph representation (preferred for complex geometries):
-  - Treat each mesh as a graph: nodes = mesh vertices, edges = mesh connectivity.
-  - Node features = field values + coordinates; edge features = relative positions.
-  - Use a GNN (e.g., MeshGraphNet) that handles variable-size graphs natively.
-  - Batch with PyG's Batch.from_data_list() which concatenates graphs with offsets.
-  - This preserves mesh resolution where it matters (near geometry features).
-
-APPROACH 3 — Implicit neural representations:
-  - Train SIREN/NeRF-style networks that take (x,y,z) coordinates as input.
-  - The network IS the representation — no fixed grid needed.
-  - Query at any resolution at inference time.
-  - This is what SimAI appears to use.
-
-DATA PIPELINE CONSIDERATIONS:
-  - Store raw simulations in HDF5 or Zarr for efficient I/O.
-  - Use a custom PyTorch Dataset with lazy loading (don't load all 10K into RAM).
-  - Normalize inputs (geometry params, BCs) and outputs (field values) per-feature.
-  - Split: 80/10/10 train/val/test, stratified by geometry type if applicable.
-  - Data augmentation: exploit symmetries (rotation, reflection) if the physics
-    allows it — doubles or quadruples effective dataset size for free.
-
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Q2: "Your model trains fine on small antenna designs but blows up on large
-     ones. What would you try?"
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-DIAGNOSIS (ask these first):
-  1. "Blows up" = NaN loss? Exploding outputs? OOM? Each has different fixes.
-  2. Does it fail during training or only at inference?
-  3. How much larger are the "large" designs? 2x? 100x?
-
-IF NUMERICAL INSTABILITY (NaN/Inf):
-  - Normalize inputs by physical scale: divide coordinates by characteristic
-    length (e.g., wavelength), divide field values by max expected magnitude.
-  - Use LayerNorm or InstanceNorm between layers (BatchNorm can be unstable
-    when statistics differ between small and large designs).
-  - Gradient clipping: torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-  - Lower learning rate; use a warmup schedule.
-  - Check for division by zero in custom loss functions.
-
-IF GENERALIZATION FAILURE (large error, not NaN):
-  - The model likely overfit to the scale of small designs.
-  - Solution 1: Scale-invariant input representation — normalize coordinates
-    to [-1, 1] per design, use relative (not absolute) positions.
-  - Solution 2: Include more large designs in training (curriculum learning:
-    start small, gradually increase size).
-  - Solution 3: Use architecture that handles variable scales:
-    * FNO: resolution-invariant by design (can train 64x64, infer 256x256).
-    * GNN: naturally handles different numbers of nodes.
-    * Multi-scale architecture: separate branches for different frequency bands.
-
-IF OUT OF MEMORY:
-  - Gradient checkpointing: trade compute for memory.
-  - Mixed precision training (torch.cuda.amp).
-  - Domain decomposition: split large designs into overlapping patches,
-    process each patch, stitch results (like sliding window).
-  - Reduce batch size but increase gradient accumulation steps.
-
-RECOMMENDED SYSTEMATIC APPROACH:
-  1. Visualize predictions on failing cases to understand the failure mode.
-  2. Check if the issue is input-side (coordinates) or output-side (fields).
-  3. Start with normalization fixes (cheapest to try).
-  4. Then try architectural changes.
-  5. Finally, consider data augmentation / curriculum learning.
-
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Q3: "How would you implement equivariance in a network for EM simulation?"
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-WHY EQUIVARIANCE MATTERS FOR EM:
-  Maxwell's equations are equivariant to rotations, translations, and
-  reflections (the Euclidean group E(3)). If you rotate the antenna, the
-  E-field rotates with it. A network that respects this learns faster and
-  generalizes better — my EDISCO paper showed 33-50% less training data.
-
-WHAT TYPE OF EQUIVARIANCE:
-  - SE(3) = rotations + translations (orientation matters, no reflections)
-  - E(3) = SE(3) + reflections (full Euclidean group)
-  - For EM: E-field is a VECTOR field — it transforms as a type-1 representation
-    under rotations. This is different from a scalar field (type-0).
-  - B-field is a pseudovector (type-1 but flips sign under reflection).
-
-IMPLEMENTATION APPROACHES:
-
-  1. EQUIVARIANT GNNs (e.g., EGNN, E(n)-Equivariant GNN):
-     - Use relative position vectors (x_j - x_i) as edge features.
-     - Update both scalar features AND coordinate/vector features.
-     - Scalar features are invariant; vector features transform equivariantly.
-     - Libraries: e3nn (PyTorch), MACE architecture.
-
-  2. SPHERICAL HARMONICS (e3nn approach):
-     - Represent features as irreducible representations (irreps) of SO(3).
-     - Scalars = l=0, vectors = l=1, rank-2 tensors = l=2.
-     - Use Clebsch-Gordan tensor products for equivariant interactions.
-     - Most principled but highest implementation complexity.
-
-  3. FRAME AVERAGING (practical shortcut):
-     - For each input, compute predictions for multiple rotated versions.
-     - Average the (inverse-rotated) outputs.
-     - Achieves approximate equivariance without architectural changes.
-     - Cheaper to implement but slower at inference.
-
-  4. STEERABLE CNNs (for grid-based representations):
-     - Use steerable filters that transform predictably under rotation.
-     - Good for regular grid data (like FNO on a regular mesh).
-     - Library: escnn (PyTorch).
-
-PRACTICAL RECOMMENDATION:
-  For EM simulation specifically, I'd start with EGNN for mesh-based data
-  (treating vector fields as coordinate-like features that transform under
-  rotation), and validate that equivariance actually improves generalization
-  on a held-out set of rotated geometries before investing in the full
-  spherical harmonics machinery.
-
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Q4: "How would you set up distributed training for a large surrogate model?"
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-STEP 1: Choose the parallelism strategy.
-  - DATA PARALLEL (most common, try first):
-    * Each GPU gets a copy of the full model + different data batch.
-    * Gradients are all-reduced (averaged) across GPUs after each step.
-    * Effective batch size = per_gpu_batch * num_gpus.
-    * Works when model fits on one GPU.
-
-  - MODEL PARALLEL (when model is too large for one GPU):
-    * Split model across GPUs (e.g., encoder on GPU0, decoder on GPU1).
-    * Pipeline parallelism to keep all GPUs busy.
-    * More complex, only needed for very large models.
-
-STEP 2: Implementation with PyTorch DDP (DistributedDataParallel).
-
-    # In the training script:
-    import torch.distributed as dist
-    from torch.nn.parallel import DistributedDataParallel as DDP
-    from torch.utils.data.distributed import DistributedSampler
-
-    # Initialize process group
-    dist.init_process_group(backend="nccl")  # NCCL for GPU, gloo for CPU
-    local_rank = int(os.environ["LOCAL_RANK"])
-    torch.cuda.set_device(local_rank)
-
-    # Wrap model
-    model = model.to(local_rank)
-    model = DDP(model, device_ids=[local_rank])
-
-    # Use DistributedSampler to partition data across GPUs
-    sampler = DistributedSampler(dataset, shuffle=True)
-    dataloader = DataLoader(dataset, sampler=sampler, batch_size=per_gpu_batch)
-
-    # In training loop: set epoch for proper shuffling
-    for epoch in range(num_epochs):
-        sampler.set_epoch(epoch)  # CRITICAL: ensures different shuffling per epoch
-        for batch in dataloader:
-            ...
-
-    # Launch: torchrun --nproc_per_node=4 train.py
-
-STEP 3: Practical considerations.
-  - Learning rate scaling: linear scaling rule — multiply LR by num_gpus.
-  - Warmup: increase LR gradually over first few hundred steps.
-  - Gradient accumulation: if per-GPU batch is too small, accumulate gradients
-    over multiple forward passes before stepping.
-  - Mixed precision (AMP): almost always a good idea — 2x memory savings,
-    1.5-2x speed, minimal accuracy loss.
-  - Logging: only log from rank 0 to avoid duplicate output.
-  - Checkpointing: save model.module.state_dict() (unwrap DDP wrapper).
-  - Reproducibility: set seeds per-rank = base_seed + rank.
-
-STEP 4: If using cloud/cluster (likely at Ansys):
-  - Use SLURM or Kubernetes for job scheduling.
-  - PyTorch Lightning or HuggingFace Accelerate simplify multi-node setup.
-  - Monitor GPU utilization — if below 80%, you're likely I/O bottlenecked.
-    Fix with: more DataLoader workers, pin_memory=True, prefetching.
-
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-Q5: "How would you evaluate whether your surrogate model is accurate enough
-     for production use?"
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-TIER 1: Standard ML Metrics (necessary but NOT sufficient)
-  - Relative L2 error on held-out test set (per-field, not aggregated).
-  - Pointwise max error (worst-case matters in engineering — a bridge doesn't
-    care about average stress if it fails at one point).
-  - Distribution of errors: plot histograms, check for heavy tails.
-  - Per-region error: separate error metrics near geometry surfaces vs. far-field.
-    Errors near boundaries are often larger and more consequential.
-
-TIER 2: Physics-Informed Validation (catches "looks right but is wrong")
-  - PDE residual: plug the predicted fields back into Maxwell's equations
-    and measure how badly they violate the governing PDEs.
-  - Conservation laws: check div(D)=rho, div(B)=0, energy conservation.
-  - Boundary condition satisfaction: verify E-field tangential components
-    are continuous, normal components satisfy jump conditions.
-  - These don't require ground truth — they're self-consistency checks.
-
-TIER 3: Engineering-Relevant Metrics (what the engineer actually cares about)
-  - S-parameters (S11, S21, etc.) for RF components — derived quantities.
-  - Radiation pattern for antennas.
-  - Resonant frequency accuracy.
-  - Bandwidth prediction.
-  - Compare these derived quantities, not just raw field values.
-
-TIER 4: Robustness and Reliability
-  - Out-of-distribution detection: train an ensemble or use MC-Dropout to
-    estimate prediction uncertainty. Flag designs where uncertainty is high.
-  - Adversarial testing: deliberately test on designs at the boundary of the
-    training distribution (extreme dimensions, unusual materials).
-  - Regression testing: when updating the model, verify it doesn't degrade
-    on previously passing test cases.
-
-DEPLOYMENT DECISION FRAMEWORK:
-  - Define acceptance criteria WITH the domain expert upfront.
-  - Example: "S11 must be within 0.5 dB of HFSS for 95% of test designs."
-  - Use the surrogate for exploration/screening, HFSS for final validation.
-  - Monitor in production: periodically run HFSS on surrogate-approved designs
-    to catch drift.
-
-MY EXPERIENCE:
-  In my IEEE JESTIE paper, I validated on fault transients (worst-case scenarios)
-  separately from normal operation. DFIG model accuracy was 0.02% MSELoss, battery
-  0.00078%, PV 0.2% (normal) to 4% (partial shading). The quantization error
-  (float to FPGA fixed-point) was separately below 0.01%. The key was including
-  diverse operating conditions (Monte Carlo sampling, 5% fault scenarios) in both
-  training AND testing, plus OOD validation on faults 20-100% outside training range.
-"""
-
-
-# ==============================================================================
-# PART 3: COMMON PYTORCH GOTCHAS
-# ==============================================================================
-
-PYTORCH_GOTCHAS = """
-================================================================================
-PART 3: 10 COMMON PYTORCH GOTCHAS FOR INTERVIEWS
+PART 4: 10 PYTORCH GOTCHAS — "SPOT THE BUG"
 ================================================================================
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-GOTCHA 1: Forgetting torch.no_grad() during evaluation
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━ GOTCHA 1: model.eval() does NOT disable gradients ━━━
 
 BUG:
     model.eval()
-    output = model(x)  # Still building computation graph! Wastes memory.
+    output = model(x)  # Still tracking gradients! Wastes memory.
 
 FIX:
     model.eval()
-    with torch.no_grad():        # Disables gradient tracking
+    with torch.no_grad():
         output = model(x)
 
-WHY: model.eval() only changes behavior of Dropout/BatchNorm layers. It does
-NOT disable gradient computation. You need torch.no_grad() to save memory
-and speed up inference. In a training loop, this also prevents accidental
-gradient leakage from validation into training.
+WHY: model.eval() only changes Dropout and BatchNorm behavior.
+     torch.no_grad() disables autograd for memory/speed savings.
 
-RELATED: Use .detach() when you need a tensor value but don't want gradients
-to flow through it (e.g., for logging, or when using a target in a loss):
-    target = model_target(x).detach()  # Stop gradients here
-
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-GOTCHA 2: In-place operations breaking autograd
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━ GOTCHA 2: In-place operations break autograd ━━━
 
 BUG:
     x = torch.randn(3, requires_grad=True)
-    x += 1          # In-place add! Modifies x's data.
-    x.backward()    # RuntimeError: in-place operation modified a leaf Variable
+    x += 1            # In-place! Destroys grad graph.
+    loss = x.sum()
+    loss.backward()   # RuntimeError
 
 FIX:
-    x = torch.randn(3, requires_grad=True)
-    y = x + 1       # Creates a NEW tensor; autograd graph is intact.
-    y.backward()
+    y = x + 1         # New tensor — graph intact.
 
-COMMON IN-PLACE TRAPS:
-    - x += 1, x *= 2, x[0] = 5
-    - x.add_(1), x.mul_(2), x.zero_()
-    - Any operation ending in _ is in-place
+RULE: Any operation ending in _ (add_, mul_, zero_) is in-place.
+      Never use on tensors that need gradients.
 
-RULE: Never do in-place operations on tensors that require gradients or are
-part of the computation graph. Autograd saves references to tensor versions;
-in-place ops invalidate those references.
-
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-GOTCHA 3: GPU/CPU tensor device mismatch
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━ GOTCHA 3: Device mismatch ━━━
 
 BUG:
     model = model.cuda()
-    x = torch.randn(4, 10)          # On CPU!
-    output = model(x)               # RuntimeError: expected CUDA tensor
+    x = torch.randn(4, 10)   # CPU!
+    output = model(x)         # RuntimeError
 
 FIX:
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model = model.to(device)
-    x = torch.randn(4, 10).to(device)
-    output = model(x)
+    x = x.to(device)
 
-BEST PRACTICE: Define `device` once at the top of your script and use it
-everywhere. When creating new tensors inside a model (e.g., masks, positional
-encodings), use `x.device` to match the input tensor:
-    mask = torch.ones(n, device=x.device)
+TIP: Inside a model, create new tensors on the same device as input:
+     mask = torch.ones(n, device=x.device)
 
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-GOTCHA 4: Forgetting model.train() / model.eval()
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━ GOTCHA 4: Forgetting model.train() after validation ━━━
 
 BUG:
-    # After validation, you forget to switch back:
     model.eval()
     val_loss = validate(model)
-    # ... continue training without model.train() ...
-    # Dropout is disabled, BatchNorm uses running stats => poor training
+    # ... continue training with Dropout disabled, BatchNorm frozen ...
 
 FIX:
     model.eval()
     with torch.no_grad():
         val_loss = validate(model)
-    model.train()  # ALWAYS switch back before training resumes
+    model.train()  # ALWAYS switch back!
 
-WHY: model.eval() changes:
-    - Dropout: disabled (no random zeroing)
-    - BatchNorm: uses running mean/var instead of batch statistics
-    If you forget to switch back, training will silently degrade.
-
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-GOTCHA 5: Not zeroing gradients before backward()
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━ GOTCHA 5: Gradient accumulation (forgetting zero_grad) ━━━
 
 BUG:
     for batch in dataloader:
-        loss = compute_loss(model(batch))
-        loss.backward()           # Gradients ACCUMULATE!
+        loss = model(batch).sum()
+        loss.backward()       # Gradients ACCUMULATE from prior steps!
         optimizer.step()
 
 FIX:
     for batch in dataloader:
-        optimizer.zero_grad()     # Clear gradients from previous iteration
-        loss = compute_loss(model(batch))
+        optimizer.zero_grad()
+        loss = model(batch).sum()
         loss.backward()
         optimizer.step()
 
-WHY: PyTorch accumulates gradients by default (useful for gradient
-accumulation across micro-batches). If you forget zero_grad(), gradients
-from previous steps add up, leading to incorrect and ever-growing updates.
+NOTE: Accumulation is actually useful for simulating larger batch sizes:
+    for i, batch in enumerate(dataloader):
+        loss = model(batch).sum() / accumulation_steps
+        loss.backward()
+        if (i + 1) % accumulation_steps == 0:
+            optimizer.step()
+            optimizer.zero_grad()
 
-NOTE: optimizer.zero_grad(set_to_none=True) is slightly faster than the
-default (sets .grad to None instead of zero tensor).
-
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-GOTCHA 6: Incorrect tensor shape broadcasting leading to silent bugs
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━ GOTCHA 6: Silent broadcasting bugs ━━━
 
 BUG:
-    predictions = model(x)         # Shape: (batch, 10)
-    targets = get_targets(x)       # Shape: (batch,)
-    loss = (predictions - targets) ** 2  # Broadcasts to (batch, 10)!
-    # No error, but the loss is computed incorrectly.
+    pred = model(x)       # (batch, 10)
+    target = get_target() # (batch,)
+    loss = (pred - target) ** 2  # Broadcasts to (batch, 10) — WRONG!
 
 FIX:
-    targets = targets.unsqueeze(-1)  # Shape: (batch, 1) — explicit
-    loss = (predictions - targets) ** 2  # Now (batch, 10) correctly
+    target = target.unsqueeze(-1)  # (batch, 1) — explicit shape
+    loss = (pred - target) ** 2
 
-BEST PRACTICE:
-    - Always check shapes with assert or print during development.
-    - Use named dimensions or comments: # (batch, seq_len, hidden)
-    - Be especially careful with loss functions: MSE between wrong shapes
-      can silently compute a scalar that looks reasonable but is wrong.
+DEFENSE: Always assert shapes: assert pred.shape == target.shape
 
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-GOTCHA 7: Memory leaks from storing tensors with grad history
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━ GOTCHA 7: Memory leak from storing loss tensors ━━━
 
 BUG:
     losses = []
     for batch in dataloader:
-        loss = compute_loss(model(batch))
-        losses.append(loss)  # Keeps entire computation graph in memory!
-    avg_loss = sum(losses) / len(losses)
+        loss = model(batch).sum()
+        losses.append(loss)  # Entire computation graph stays in memory!
 
 FIX:
-    losses = []
-    for batch in dataloader:
-        loss = compute_loss(model(batch))
-        losses.append(loss.item())  # .item() extracts Python float, frees graph
-    avg_loss = sum(losses) / len(losses)
+    losses.append(loss.item())   # .item() → Python float, graph freed
+    # or
+    losses.append(loss.detach()) # Tensor without grad history
 
-WHY: A tensor with grad_fn retains the entire computation graph that created
-it. Storing such tensors in a list prevents garbage collection of intermediate
-activations. GPU memory grows unboundedly. Use .item() for scalar logging
-or .detach() if you need the tensor value without the graph.
-
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-GOTCHA 8: BatchNorm with batch_size=1 or very small batches
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+━━━ GOTCHA 8: BatchNorm with batch_size=1 ━━━
 
 BUG:
     model = nn.Sequential(nn.Linear(10, 10), nn.BatchNorm1d(10))
-    x = torch.randn(1, 10)       # Single sample!
-    output = model(x)             # RuntimeError or NaN (variance is 0)
-
-FIX OPTIONS:
-    - Use LayerNorm instead of BatchNorm (normalizes across features, not batch).
-    - Use InstanceNorm for per-sample normalization.
-    - Use GroupNorm (compromise: normalizes across groups of channels).
-    - Ensure batch size >= 2 during training (or use SyncBatchNorm for DDP).
-
-WHY: BatchNorm computes mean and variance across the batch dimension.
-With batch_size=1, variance is 0, leading to division by zero. Even with
-small batches (2-4), the statistics are noisy and unstable.
-
-FOR SIMULATION: LayerNorm or InstanceNorm is usually preferred because
-simulation datasets often have small effective batch sizes (each sample
-is a large mesh or field).
-
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-GOTCHA 9: Loading a state_dict with mismatched keys (especially with DDP)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-BUG:
-    # Model was saved with DDP wrapper:
-    torch.save(ddp_model.state_dict(), "model.pt")
-    # Keys look like: "module.linear.weight", "module.linear.bias"
-
-    # Loading into a non-DDP model:
-    model.load_state_dict(torch.load("model.pt"))
-    # Error: unexpected key "module.linear.weight"
-
-FIX 1 (save correctly):
-    torch.save(ddp_model.module.state_dict(), "model.pt")  # Unwrap first
-
-FIX 2 (load flexibly):
-    state_dict = torch.load("model.pt")
-    # Strip "module." prefix
-    new_state_dict = {k.replace("module.", ""): v for k, v in state_dict.items()}
-    model.load_state_dict(new_state_dict)
-
-FIX 3 (strict=False for partial loading):
-    model.load_state_dict(torch.load("model.pt"), strict=False)
-    # Loads matching keys, ignores extras. Useful for transfer learning.
-    # BUT: silently ignores typos in key names — use with caution.
-
-
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-GOTCHA 10: Incorrect use of torch.Tensor vs torch.tensor
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-
-BUG:
-    x = torch.Tensor([1, 2, 3])     # Always float32
-    y = torch.Tensor(3)             # Allocates uninitialized 1D tensor of size 3!
+    x = torch.randn(1, 10)  # Single sample!
+    model(x)                 # RuntimeError: variance is 0
 
 FIX:
-    x = torch.tensor([1, 2, 3])     # Infers dtype from data (int64 here)
-    y = torch.tensor(3)             # Creates a scalar tensor with value 3
-    z = torch.tensor([1.0, 2.0], dtype=torch.float32)  # Explicit dtype
+    Use LayerNorm (normalizes across features) or InstanceNorm.
+    For simulation data with small batches, LayerNorm is usually better.
 
-WHY: torch.Tensor (capital T) is the class constructor — behaves unexpectedly
-with scalar arguments (creates uninitialized tensor of that SIZE, not value).
-torch.tensor (lowercase) is the function — always creates from data.
+━━━ GOTCHA 9: DDP state_dict key mismatch ━━━
 
-RULE: Always use torch.tensor() (lowercase) for creating tensors from data.
-Use torch.zeros(), torch.ones(), torch.randn() for specific patterns.
+BUG:
+    # Saved with DDP:   keys = "module.layer.weight"
+    # Loaded without DDP: expects "layer.weight"
 
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-BONUS: QUICK REFERENCE — COMMON PATTERNS
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+FIX (save correctly):
+    torch.save(ddp_model.module.state_dict(), "model.pt")
 
-# Proper training loop skeleton:
+FIX (load flexibly):
+    state = torch.load("model.pt")
+    state = {k.replace("module.", ""): v for k, v in state.items()}
+    model.load_state_dict(state)
+
+━━━ GOTCHA 10: torch.Tensor vs torch.tensor ━━━
+
+BUG:
+    x = torch.Tensor(3)     # Allocates UNINITIALIZED tensor of size 3!
+    y = torch.Tensor([1,2]) # Always float32, ignores input dtype
+
+FIX:
+    x = torch.tensor(3)     # Scalar tensor with value 3
+    y = torch.tensor([1,2]) # Infers dtype (int64 here)
+
+RULE: Always use lowercase torch.tensor() for creating from data.
+
+================================================================================
+BONUS: PATTERNS EVERY ML ENGINEER SHOULD KNOW
+================================================================================
+
+# 1. Proper training loop skeleton
     model.train()
     for epoch in range(num_epochs):
         for batch in dataloader:
             optimizer.zero_grad()
-            output = model(batch.to(device))
-            loss = criterion(output, target.to(device))
+            loss = criterion(model(batch.to(device)), target.to(device))
             loss.backward()
-            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             optimizer.step()
-            scheduler.step()  # If using a per-step scheduler
 
-# Proper evaluation skeleton:
+# 2. Proper evaluation
     model.eval()
-    total_loss = 0.0
     with torch.no_grad():
         for batch in val_loader:
-            output = model(batch.to(device))
-            total_loss += criterion(output, target.to(device)).item()
-    model.train()  # Switch back!
+            pred = model(batch.to(device))
+    model.train()
 
-# Proper checkpointing:
-    # Save
+# 3. Proper checkpointing
     torch.save({
         'epoch': epoch,
         'model_state_dict': model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
-        'loss': loss,
+        'loss': best_loss,
     }, 'checkpoint.pt')
-    # Load
-    checkpoint = torch.load('checkpoint.pt', weights_only=True)
-    model.load_state_dict(checkpoint['model_state_dict'])
-    optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
+
+    ckpt = torch.load('checkpoint.pt', weights_only=True)
+    model.load_state_dict(ckpt['model_state_dict'])
+
+# 4. Mixed precision (AMP)
+    scaler = torch.amp.GradScaler("cuda")
+    with torch.amp.autocast("cuda"):
+        loss = model(x)
+    scaler.scale(loss).backward()
+    scaler.step(optimizer)
+    scaler.update()
+
+# 5. Gradient accumulation
+    for i, batch in enumerate(loader):
+        loss = model(batch) / accum_steps
+        loss.backward()
+        if (i + 1) % accum_steps == 0:
+            optimizer.step()
+            optimizer.zero_grad()
 """
 
 
 # ==============================================================================
-# MAIN: Run all tests
+# TESTS
 # ==============================================================================
+
+def test_part1():
+    """Test Python fundamentals."""
+    print("--- Part 1: Python Fundamentals ---")
+
+    # Exercise 1
+    results = [
+        {"geometry": "dipole", "error": 0.05},
+        {"geometry": "patch",  "error": 0.12},
+        {"geometry": "dipole", "error": 0.03},
+        {"geometry": "patch",  "error": 0.08},
+    ]
+    avg = group_and_average(results)
+    assert abs(avg["dipole"] - 0.04) < 1e-10
+    assert abs(avg["patch"] - 0.10) < 1e-10
+    print("  [PASS] Exercise 1: group_and_average")
+
+    # Exercise 3
+    s_params = np.random.randn(10, 2, 2) + 1j * np.random.randn(10, 2, 2)
+    freqs = np.linspace(1.0, 10.0, 10)
+    result = SimulationResult("test_antenna", s_params, freqs)
+    assert result.n_ports == 2
+    assert 1.0 <= result.resonant_freq_ghz <= 10.0
+    print(f"  [PASS] Exercise 3: SimulationResult — {result}")
+
+    # Exercise 5
+    config = {"model_type": "gnn", "learning_rate": 1e-3, "num_epochs": 50}
+    clean = validate_config(config)
+    assert clean["batch_size"] == 32  # Default filled in
+    try:
+        validate_config({"model_type": "invalid", "learning_rate": 1e-3, "num_epochs": 10})
+        assert False, "Should have raised ValueError"
+    except ValueError:
+        pass
+    print("  [PASS] Exercise 5: validate_config")
+
+
+def test_part2():
+    """Test tensor operations."""
+    print("--- Part 2: Tensor Operations ---")
+
+    # Exercise 6
+    x = torch.randn(5, 3)
+    y = torch.randn(7, 3)
+    dist = pairwise_distances(x, y)
+    assert dist.shape == (5, 7)
+    assert (dist >= 0).all()
+    # Verify against torch.cdist
+    expected = torch.cdist(x, y)
+    assert torch.allclose(dist, expected, atol=1e-5)
+    print("  [PASS] Exercise 6: pairwise_distances")
+
+    # Exercise 7
+    node_feat = torch.randn(4, 8)
+    edges = torch.tensor([[0, 1, 2, 3], [1, 2, 3, 0]])
+    agg = gather_scatter_demo(node_feat, edges)
+    assert agg.shape == (4, 8)
+    print("  [PASS] Exercise 7: gather_scatter")
+
+    # Exercise 8
+    errors = torch.tensor([0.05, 0.15, 0.03, 0.20, 0.08])
+    freqs = torch.tensor([2e9, 5e9, 3e9, 15e9, 8e9])
+    fields = torch.randn(5, 4, 4)
+    e, f, fd = filter_simulation_data(errors, freqs, fields)
+    assert len(e) == 3  # 0.05, 0.03, 0.08 pass error; 0.03 and 0.08 pass freq
+    print("  [PASS] Exercise 8: filter_simulation_data")
+
+    # Exercise 9
+    pred = torch.randn(4, 16, 16)
+    target = torch.randn(4, 16, 16) + 5  # Offset so target_norm > 0
+    rel_err = per_sample_relative_l2(pred, target)
+    assert rel_err.shape == (4,)
+    assert (rel_err >= 0).all()
+    print("  [PASS] Exercise 9: per_sample_relative_l2")
+
+    # Exercise 10
+    x = torch.randn(2, 3, 8, 8) * 100 + 50  # Arbitrary scale
+    normed = per_sample_normalize(x)
+    # Check zero mean per sample/channel
+    means = normed.mean(dim=(-2, -1))
+    assert torch.allclose(means, torch.zeros_like(means), atol=1e-5)
+    print("  [PASS] Exercise 10: per_sample_normalize")
+
+
+def test_part3():
+    """Test PyTorch practical patterns."""
+    print("--- Part 3: PyTorch Patterns ---")
+
+    # Exercise 13
+    model = SurrogateMLP(input_dim=10, output_dim=5, hidden_dims=[64, 64])
+    x = torch.randn(4, 10)
+    y = model(x)
+    assert y.shape == (4, 5)
+    y.sum().backward()
+    params = count_parameters(model)
+    print(f"  [PASS] Exercise 13: SurrogateMLP — {params['total']:,} params ({params['total_MB']:.2f} MB)")
+
+    # Exercise 15
+    model_with_dropout = SurrogateMLP(
+        input_dim=10, output_dim=5, hidden_dims=[64, 64], dropout=0.1
+    )
+    mean, std = predict_with_uncertainty(model_with_dropout, x, n_samples=10)
+    assert mean.shape == (4, 5)
+    assert std.shape == (4, 5)
+    assert (std >= 0).all()
+    print("  [PASS] Exercise 15: MC-Dropout uncertainty")
+
 
 if __name__ == "__main__":
     print("=" * 70)
-    print("RUNNING ALL TESTS")
+    print("PYTHON & PYTORCH CODING REVIEW — Synopsys ML Internship")
     print("=" * 70)
     print()
 
-    print("--- Question 1: GRU Cell ---")
-    test_gru_cell()
+    test_part1()
     print()
-
-    print("--- Question 2: FNO Layer ---")
-    test_fno_layer()
+    test_part2()
     print()
-
-    print("--- Question 3: GNN Message Passing ---")
-    test_message_passing()
-    print()
-
-    print("--- Question 4: Diffusion Training ---")
-    test_diffusion_training()
-    print()
-
-    print("--- Question 5: SIREN ---")
-    test_siren()
+    test_part3()
     print()
 
     print("=" * 70)
     print("ALL TESTS PASSED")
     print("=" * 70)
-
-    # Print verbal questions and gotchas (for review)
-    print(VERBAL_QUESTIONS)
-    print(PYTORCH_GOTCHAS)
+    print()
+    print("To review gotchas, read the GOTCHAS string in this file,")
+    print("or see pytorch_coding_prep.md for the full study guide.")

@@ -1,0 +1,38 @@
+Job Description
+Date posted 01/13/2026
+Category Interns/TempHire Type InternJob ID 13883Remote Eligible YesDate Posted 01/13/2026
+Introduction:
+
+We drive technology innovations that shape the way we live and connect. Catalyzing the era of pervasive intelligence, we deliver design solutions, from electronic design automation to silicon IP, to system design and Multiphysics simulation and analysis. We partner closely with our customers across a wide range of industries to maximize their R&D capability and productivity, powering innovation today that ignites the ingenuity of tomorrow
+Internship Experience:
+At Synopsys, interns dive into real-world projects, gaining hands-on experience while collaborating with our passionate teams worldwide—and having fun in the process! You'll have the freedom to share your ideas, unleash your creativity, and explore your interests. This is your opportunity to bring your solutions to life and work with cutting-edge technology that shapes not only the future of innovation but also your own career path. Join us and start shaping your future today!
+
+Mission Statement:
+Our mission is to fuel today’s innovations and spark tomorrow’s creativity. Together, we embrace a growth mindset, empower one another, and collaborate to achieve our shared goals. Every day, we live by our values of Integrity, Excellence, Leadership, and Passion, fostering an inclusive culture where everyone can thrive—both at work and
+beyond.
+What You’ll Be Doing:
+* Study and summarize existing machine learning algorithms and frameworks used within the team and company.
+* Apply one or more machine learning techniques to make predictions on decisions that potentially appear during simulation.
+* Dynamically refine predictions as more information becomes available during the simulation process.
+* Summarize findings and present research achievements to the team.
+What You’ll Need:
+* Currently enrolled in a full-time degree program at a Canadian university.
+* Pursuing a Master’s or PhD in Electrical Engineering, Computational Science, Computer Science, Software Engineering, or Physics.
+* Familiarity with machine learning and prior experience with ML-related projects.
+* Proficiency in programming languages such as Python (strongly preferred) and C++.
+* Understanding of the physics of electromagnetics.
+* PhD students are strongly preferred.
+Key Program Facts:
+* Program Length: May 2026 – August 2026 (Full-Time, 40 hours per week)
+* Location: Canada (specific city or remote options may be available)
+* Working Model: Hybrid (combination of remote and on-site work, details to be discussed)
+* Full-Time/Part-Time: Full-Time
+* Start Date: May 2026
+* Salary Information: The base salary range across Canada for this role is between $38.00-$43.00 CAD per hour. The actual compensation offered will be based on a number of job-related factors, including location, skills, experience, and education. Your recruiter can share more specific details upon request.
+
+Equal Opportunity Statement:
+Synopsys is committed to creating an inclusive workplace and is an equal opportunity employer. We welcome all qualified applicants to apply, regardless of age, color, family or medical leave, gender identity or expression, marital status, disability, race and ethnicity, religion, sexual orientation, or any other characteristic protected by local laws. If you need assistance or a reasonable accommodation during the application process, please reach out to us.
+
+Synopsys Canada ULC values the diversity of our workforce. We are committed to provide access & opportunity to individuals with disabilities and will provide reasonable accommodation to individuals throughout the recruitment and employment process. Should you require an accommodation, please contact hr-help-canada@synopsys.com.
+
+This is the job description, you can also combine these into our preperations
